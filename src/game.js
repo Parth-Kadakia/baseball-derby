@@ -55,6 +55,11 @@ export function createGame({
         maxPitches: state.derbyMaxPitches,
       });
     }
+    // Career last-life pressure cue toggles a body class.
+    document.body.classList.toggle(
+      'career-last-life',
+      mode.name === 'career' && state.careerLives === 1,
+    );
   }
 
   function startWindup(){
@@ -328,6 +333,13 @@ export function createGame({
       flash(0.4, 150);
       setTimeout(startWindup, 1100);
       return;
+    }
+    // Career streak milestones (5 / 10 / 20 / 30) — quick floater, no pause.
+    if (state.mode === 'career' && state.careerStreakMilestone){
+      const m = state.careerStreakMilestone;
+      state.careerStreakMilestone = null;
+      floater(m.text, m.color, 50, 30);
+      sfx.crowdCheer(0.7);
     }
     // Derby: resolve any pending phase transition (regulation→bonus, or
     // bonus clock expiry → game over). Done here so transitions land between

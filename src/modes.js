@@ -246,9 +246,15 @@ export const CAREER = {
     return { type, location: pickFrom(locPool) };
   },
   // Helper — bumps at-bat counter, returns true if we hit a level-up boundary.
+  // Also flags streak milestones (5/10/20/...) so the game can celebrate them.
   _completeAtBat(state){
     state.careerAtBats++;
     state.careerStreak++;
+    state.careerStreakMilestone = null;
+    if (state.careerStreak === 5)  state.careerStreakMilestone = { text: 'ON FIRE!',     color: '#ff7733' };
+    if (state.careerStreak === 10) state.careerStreakMilestone = { text: 'HEATING UP!',  color: '#ffd24a' };
+    if (state.careerStreak === 20) state.careerStreakMilestone = { text: 'UNSTOPPABLE!', color: '#ff5e2a' };
+    if (state.careerStreak === 30) state.careerStreakMilestone = { text: 'LEGENDARY!',   color: '#ff2ad6' };
     const newLevel = 1 + Math.floor(state.careerAtBats / 5);
     if (newLevel > state.careerLevel){
       state.careerLevel = newLevel;

@@ -12,7 +12,9 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUT_DIR = resolve(__dirname, '..', 'sounds', 'sfx');
+// Vite serves /public at the site root; the game fetches /sounds/sfx/<id>.mp3
+// so the generator must drop files into public/sounds/sfx for them to load.
+const OUT_DIR = resolve(__dirname, '..', 'public', 'sounds', 'sfx');
 
 if (!process.env.FAL_KEY){
   console.error('Missing FAL_KEY env var. Set it and rerun:');

@@ -10,6 +10,7 @@ import { setAim, setMeter, updateBallMarker, setModeStat, setBodyMode } from './
 import { createGame } from './game.js';
 import { MODES } from './modes.js';
 import { loadProfile, saveProfile, recordDerbyRun, recordCareerRun } from './storage.js';
+import { submitScore, fetchLeaderboard } from './leaderboard.js';
 
 // ---- three.js bootstrap ----
 const canvas = document.getElementById('game');
@@ -73,8 +74,14 @@ const titleEl = document.getElementById('title');
 const overModal = document.getElementById('overModal');
 const overTitle = document.getElementById('over-title');
 const overStats = document.getElementById('over-stats');
+const overRank = document.getElementById('over-rank');
 const pauseModal = document.getElementById('pauseModal');
 const modeCards = document.querySelectorAll('#modeCards .mode-card');
+const lbModal = document.getElementById('lbModal');
+const lbList = document.getElementById('lbList');
+const lbTabs = document.querySelectorAll('#lbModal .lb-tab');
+const nickInput = document.getElementById('nickInput');
+const submitScoreBtn = document.getElementById('submitScoreBtn');
 
 // ---- best-score chips on the title cards ----
 function refreshBestChips(){
@@ -86,6 +93,14 @@ function refreshBestChips(){
     c.runs > 0 ? `LV ${c.level} · ${c.bestStreak} STREAK` : '—';
 }
 refreshBestChips();
+
+// ---- nickname input wired to the saved profile ----
+nickInput.value = profile.nickname || '';
+nickInput.addEventListener('input', () => {
+  profile.nickname = nickInput.value.toUpperCase().slice(0, 16);
+  if (nickInput.value !== profile.nickname) nickInput.value = profile.nickname;
+  saveProfile(profile);
+});
 
 // ---- title screen team color picker ----
 let userHue = profile.teamHue || 220;
@@ -151,14 +166,19 @@ function applyTeamColors(){
 }
 
 // ---- end-of-run → save + show modal ----
+let lastRun = null;     // captured for the submit-score button
 function handleGameOver(state, mode){
-  // Persist the run.
+  // Persist the run locally.
   if (mode.name === 'derby'){
     recordDerbyRun(profile, {
       score: state.score,
       hrs: state.derbyHRs,
       longestHR: state.derbyLongest,
     });
+    lastRun = {
+      mode: 'derby',
+      stats: { hrs: state.derbyHRs, longest: Math.round(state.derbyLongest) },
+    };
   } else if (mode.name === 'career'){
     recordCareerRun(profile, {
       atBats: state.careerAtBats,
@@ -167,6 +187,12 @@ function handleGameOver(state, mode){
       finalLevel: state.careerLevel,
       streak: state.careerStreak,
     });
+    lastRun = {
+      mode: 'career',
+      stats: { streak: state.careerStreak, level: state.careerLevel },
+    };
+  } else {
+    lastRun = null;     // practice mode doesn't submit
   }
   refreshBestChips();
 
@@ -177,7 +203,74 @@ function handleGameOver(state, mode){
   overStats.innerHTML = stats.map(s =>
     `<div class="stat"><div class="lbl">${s.label}</div><div class="num">${s.value}</div></div>`
   ).join('');
+  overRank.textContent = '';
+  // Practice mode doesn't have a leaderboard, so hide submit there.
+  submitScoreBtn.style.display = lastRun ? '' : 'none';
+  submitScoreBtn.disabled = false;
+  submitScoreBtn.textContent = 'SUBMIT SCORE';
   overModal.classList.add('show');
+}
+
+// ---- leaderboard interactions ----
+async function handleSubmitScore(){
+  if (!lastRun) return;
+  if (!profile.nickname){
+    overRank.textContent = 'PICK A NICKNAME ON THE TITLE SCREEN FIRST.';
+    return;
+  }
+  submitScoreBtn.disabled = true;
+  submitScoreBtn.textContent = 'SUBMITTING…';
+  const res = await submitScore({
+    userId: profile.userId,
+    nickname: profile.nickname,
+    teamHue: profile.teamHue,
+    mode: lastRun.mode,
+    stats: lastRun.stats,
+  });
+  if (res?.error){
+    overRank.textContent = `LEADERBOARD OFFLINE (${res.error})`;
+    submitScoreBtn.disabled = false;
+    submitScoreBtn.textContent = 'RETRY';
+    return;
+  }
+  if (res?.rank){
+    overRank.textContent = `RANK ${res.rank} OF ${res.totalPlayers}`;
+  }
+  submitScoreBtn.textContent = 'SUBMITTED';
+}
+
+let lbActiveMode = 'derby';
+async function showLeaderboard(initialMode = 'derby'){
+  lbActiveMode = initialMode;
+  lbTabs.forEach(t => t.classList.toggle('active', t.dataset.mode === lbActiveMode));
+  lbModal.classList.add('show');
+  await loadLbList(lbActiveMode);
+}
+async function loadLbList(mode){
+  lbList.innerHTML = '<div class="lb-empty">LOADING…</div>';
+  const res = await fetchLeaderboard(mode);
+  if (res?.error){
+    lbList.innerHTML = `<div class="lb-error">LEADERBOARD OFFLINE<br/><br/>(${res.error})<br/><br/>Once the API is deployed and Upstash Redis is connected on Vercel,<br/>this will fill with global rankings.</div>`;
+    return;
+  }
+  if (!res?.rows?.length){
+    lbList.innerHTML = '<div class="lb-empty">NO RUNS YET — BE THE FIRST.</div>';
+    return;
+  }
+  lbList.innerHTML = res.rows.map(r => {
+    const isMe = r.nickname === profile.nickname;
+    const score = mode === 'derby'
+      ? `${r.hrs} HR${r.longest ? ` · ${r.longest}FT` : ''}`
+      : `${r.streak} STREAK · LV ${r.level}`;
+    return `<div class="lb-row ${isMe ? 'me' : ''}">
+      <div class="rk">#${r.rank}</div>
+      <div class="nm">${escapeHtml(r.nickname)}</div>
+      <div class="sc">${score}</div>
+    </div>`;
+  }).join('');
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 // ---- modal buttons ----
@@ -200,6 +293,18 @@ document.getElementById('quitBtn').addEventListener('click', () => {
   titleEl.classList.remove('hidden');
   game = null;
 });
+
+submitScoreBtn.addEventListener('click', handleSubmitScore);
+document.getElementById('overViewLbBtn').addEventListener('click', () => {
+  showLeaderboard(lastRun?.mode || 'derby');
+});
+document.getElementById('viewLbBtn').addEventListener('click', () => showLeaderboard('derby'));
+document.getElementById('closeLbBtn').addEventListener('click', () => lbModal.classList.remove('show'));
+lbTabs.forEach(t => t.addEventListener('click', () => {
+  lbActiveMode = t.dataset.mode;
+  lbTabs.forEach(x => x.classList.toggle('active', x === t));
+  loadLbList(lbActiveMode);
+}));
 
 // ---- input ----
 addEventListener('keydown', (e) => {
