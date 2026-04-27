@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Sprite Editor — Diamond Storm</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; background:#0a1220; color:#e7eefc;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; overflow:hidden; }
+  .app { display:grid; grid-template-columns: 1fr 360px; grid-template-rows: 56px 1fr;
+    height:100vh; gap: 0; }
+  header { grid-column: 1 / span 2; display:flex; align-items:center; gap:14px;
+    padding: 0 18px; background: linear-gradient(180deg, #0d1626 0%, #0a1220 100%);
+    border-bottom: 1px solid #1c2c4a; }
+  header h1 { font-size: 16px; letter-spacing: 4px; color:#8ecfff; font-weight:600; margin:0; }
+  header select, header button, header input {
+    background:#142035; color:#cfe6ff; border:1px solid #2b3f63; padding: 6px 12px;
+    border-radius:6px; font-size:13px; font-family: inherit;
+  }
+  header button { cursor:pointer; }
+  header button:hover { background:#1a2b48; }
+  header button.primary { background:#1f5fae; border-color:#3b86d8; color:#fff; }
+  header button.primary:hover { background:#2870c2; }
+  header .sep { width:1px; height: 24px; background:#1c2c4a; margin: 0 6px; }
+  header .status { color:#7aa3cf; font-size:12px; margin-left:auto; letter-spacing:1px; }
+
+  /* Main canvas area */
+  .stage { position:relative; overflow:auto; background:
+    repeating-conic-gradient(#0e1526 0 25%, #0a1220 0 50%) 0 0 / 24px 24px; }
+  .stage-inner { position:relative; padding: 20px; }
+  #sheetCanvas { display:block; image-rendering: pixelated; cursor: crosshair;
+    box-shadow: 0 0 0 1px #2c4068, 0 12px 40px rgba(0,0,0,.6); }
+  #overlayCanvas { position:absolute; top:20px; left:20px; pointer-events:none;
+    image-rendering: pixelated; }
+
+  /* Right panel */
+  .panel { background:#0c1424; border-left:1px solid #1c2c4a;
+    display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+  .panel section { border-bottom: 1px solid #18243d; padding: 12px 14px; }
+  .panel section h2 { font-size:11px; letter-spacing:3px; color:#8ecfff;
+    margin: 0 0 10px 0; font-weight:700; text-transform:uppercase; }
+  .row { display:flex; gap:6px; align-items:center; margin-bottom:8px; }
+  .row input[type="text"] { flex:1; background:#0a1220; border:1px solid #233557;
+    color:#cfe6ff; padding:5px 9px; border-radius:5px; font-size:13px;
+    font-family: ui-monospace, monospace; }
+  .row button { background:#1c2c4a; color:#cfe6ff; border:1px solid #2b3f63;
+    padding: 5px 10px; border-radius:5px; cursor:pointer; font-size:12px;
+    font-family:inherit; white-space:nowrap; }
+  .row button:hover { background:#26385c; }
+  .row button.danger { background:#3a1818; border-color:#5a2828; color:#ff9a9a; }
+  .row button.danger:hover { background:#4a1f1f; }
+  .row button.primary { background:#1f5fae; border-color:#3b86d8; color:#fff; }
+
+  .anims { flex:1; overflow:auto; min-height:0; }
+  .anim {
+    background:#0a1220; border:1px solid #1c2c4a; border-radius:8px; margin: 8px 14px;
+    padding: 10px;
+  }
+  .anim.active { border-color:#3b86d8; box-shadow: 0 0 0 1px #3b86d8 inset; }
+  .anim-head { display:flex; gap:6px; align-items:center; margin-bottom:8px; cursor:pointer; }
+  .anim-head .name { flex:1; font-weight:600; color:#cfe6ff; font-size:13px;
+    font-family: ui-monospace, monospace; }
+  .anim-head .count { color:#6a8db5; font-size:11px; }
+  .frames { display:flex; flex-wrap:wrap; gap:4px; }
+  .frame {
+    position:relative; padding:2px; background:repeating-conic-gradient(#1a2438 0 25%, #141b2c 0 50%) 0 0 / 8px 8px;
+    border:1px solid #2c4068; border-radius:4px; cursor:pointer;
+  }
+  .frame canvas { display:block; image-rendering: pixelated;
+    width: 64px; height: 64px; object-fit:contain; }
+  .frame.selected { outline:2px solid #ffce3a; outline-offset: 1px; }
+  .frame .x { position:absolute; top:-6px; right:-6px; background:#3a1818;
+    color:#ff9a9a; border-radius: 50%; width:18px; height:18px; line-height:16px;
+    text-align:center; font-size: 12px; cursor:pointer; border:1px solid #5a2828;
+    display:none;
+  }
+  .frame:hover .x { display:block; }
+
+  .help { color:#6a8db5; font-size:11px; line-height:1.5; padding: 8px 14px 0; }
+  .help kbd { background:#142035; border:1px solid #2b3f63; border-radius:3px;
+    padding: 0 5px; font-family: ui-monospace, monospace; color:#cfe6ff; }
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:#1c2c4a; color:#cfe6ff; padding: 10px 18px; border-radius:8px;
+    border:1px solid #3b86d8; box-shadow:0 8px 24px rgba(0,0,0,.5);
+    z-index:50; opacity:0; pointer-events:none; transition: opacity .2s;
+    font-size:13px; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>🎨 SPRITE EDITOR</h1>
+    <select id="sheetSel">
+      <option value="./spritsheets/Batsman.png">Batsman.png</option>
+      <option value="./spritsheets/Pitching.png">Pitching.png</option>
+      <option value="./spritsheets/Catching.png">Catching.png</option>
+      <option value="./spritsheets/Fielders.png">Fielders.png</option>
+      <option value="./spritsheets/Infielders.png">Infielders.png</option>
+      <option value="./spritsheets/Running.png">Running.png</option>
+      <option value="./spritsheets/Special.png">Special.png</option>
+      <option value="./spritsheets/ball physics.png">ball physics.png</option>
+      <option value="./spritsheets/umpire.png">umpire.png</option>
+      <option value="./spritsheets/UI.png">UI.png</option>
+      <option value="./spritsheets/crowd.png">crowd.png</option>
+    </select>
+    <span class="sep"></span>
+    <label style="color:#7aa3cf;font-size:12px;">Zoom</label>
+    <input id="zoomIn" type="range" min="1" max="4" step="0.25" value="1.5" style="width:120px"/>
+    <span id="zoomLbl" style="color:#cfe6ff;font-size:12px;width:36px">1.5×</span>
+    <span class="sep"></span>
+    <button id="newAnimBtn">+ New Animation</button>
+    <button id="autoSliceBtn" title="Detect frames automatically by scanning for bg gaps in the current row">Auto-slice row…</button>
+    <span class="sep"></span>
+    <button id="exportBtn" class="primary">Export JSON</button>
+    <button id="importBtn">Import JSON…</button>
+    <span class="status" id="statusBar">ready</span>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="stage-inner">
+      <canvas id="sheetCanvas"></canvas>
+      <canvas id="overlayCanvas"></canvas>
+    </div>
+  </div>
+
+  <div class="panel">
+    <section>
+      <h2>Workflow</h2>
+      <div class="help">
+        1. Pick a sheet ↑<br>
+        2. <kbd>+ New Animation</kbd>, name it (e.g. <code>idle</code>)<br>
+        3. <b>Drag</b> on the sheet to box each frame — boxes get added to the active animation in order<br>
+        4. Click a frame in the right panel to select it. <kbd>Del</kbd> removes it. Drag inside a selected box to move; drag a corner to resize.<br>
+        5. <kbd>Auto-slice row…</kbd> over an empty area: drag a tall row, click the button, it auto-detects frames in that row<br>
+        6. <kbd>Export JSON</kbd> — copies a `STRIPS_PRECUT` block to your clipboard for the game
+      </div>
+    </section>
+    <section style="flex:0 0 auto; padding-bottom:6px;">
+      <h2>Active sheet</h2>
+      <div class="row">
+        <input type="text" id="sheetKeyInput" placeholder="batsman" />
+        <button id="renameSheetBtn">set key</button>
+      </div>
+      <div class="help" style="padding:0">Used as the top-level key in the exported JSON.</div>
+    </section>
+    <div class="anims" id="anims"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+const state = {
+  sheetURL: null,
+  sheetKey: 'batsman',
+  img: null,
+  zoom: 1.5,
+  // animations: array of { name, frames: [{x,y,w,h}, ...] }
+  anims: [],
+  activeAnimIdx: 0,
+  selectedFrame: null,  // { animIdx, frameIdx }
+  // pending drag state
+  drag: null,           // { mode:'draw'|'move'|'resize', startX, startY, ... }
+  // per-sheet persistence in localStorage
+};
+
+const $ = (s) => document.querySelector(s);
+const sheetCanvas = $('#sheetCanvas');
+const overlay = $('#overlayCanvas');
+const sctx = sheetCanvas.getContext('2d', { willReadFrequently: true });
+const octx = overlay.getContext('2d');
+const stage = $('#stage');
+const animsDiv = $('#anims');
+const toastEl = $('#toast');
+
+function toast(msg, ms=1800){
+  toastEl.textContent = msg; toastEl.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(()=> toastEl.classList.remove('show'), ms);
+}
+function setStatus(s){ $('#statusBar').textContent = s; }
+
+// ============================================================
+// Persistence
+// ============================================================
+function storageKey(){ return 'sprite-editor::' + state.sheetURL; }
+function saveLocal(){
+  if (!state.sheetURL) return;
+  localStorage.setItem(storageKey(), JSON.stringify({
+    sheetKey: state.sheetKey,
+    anims: state.anims,
+  }));
+}
+function loadLocal(){
+  if (!state.sheetURL) return false;
+  const raw = localStorage.getItem(storageKey());
+  if (!raw) return false;
+  try {
+    const obj = JSON.parse(raw);
+    state.sheetKey = obj.sheetKey || guessKey();
+    state.anims = obj.anims || [];
+    return true;
+  } catch { return false; }
+}
+function guessKey(){
+  const f = state.sheetURL.split('/').pop().replace(/\.[^.]+$/,'').toLowerCase();
+  return f.replace(/[^a-z0-9_]/g,'_');
+}
+
+// ============================================================
+// Sheet load / draw
+// ============================================================
+function loadSheet(url){
+  state.sheetURL = url;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    state.img = img;
+    sheetCanvas.width = img.width;
+    sheetCanvas.height = img.height;
+    overlay.width = img.width;
+    overlay.height = img.height;
+    applyZoom();
+    sctx.drawImage(img, 0, 0);
+    if (!loadLocal()){
+      state.sheetKey = guessKey();
+      state.anims = [{ name:'idle', frames:[] }];
+    }
+    state.activeAnimIdx = 0;
+    state.selectedFrame = null;
+    $('#sheetKeyInput').value = state.sheetKey;
+    renderAnims();
+    drawOverlay();
+    setStatus(`${img.width}×${img.height} · ${url.split('/').pop()}`);
+  };
+  img.onerror = () => toast('Failed to load ' + url);
+  img.src = url;
+}
+
+function applyZoom(){
+  const z = state.zoom;
+  for (const c of [sheetCanvas, overlay]){
+    c.style.width  = (sheetCanvas.width  * z) + 'px';
+    c.style.height = (sheetCanvas.height * z) + 'px';
+  }
+  $('#zoomLbl').textContent = z.toFixed(2)+'×';
+}
+
+// ============================================================
+// Overlay drawing — boxes around each frame in each animation
+// ============================================================
+const ANIM_COLORS = [
+  '#ffce3a','#3aff8c','#3acaff','#ff6cf3','#ff8a3a',
+  '#a6ff3a','#7aa6ff','#ff5a5a','#9affff','#c099ff',
+];
+
+function drawOverlay(){
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  // Draw all frames; active anim slightly thicker
+  for (let ai=0; ai<state.anims.length; ai++){
+    const a = state.anims[ai];
+    const color = ANIM_COLORS[ai % ANIM_COLORS.length];
+    const isActive = (ai === state.activeAnimIdx);
+    octx.strokeStyle = color;
+    octx.lineWidth = isActive ? 2 : 1;
+    octx.font = '12px ui-monospace, monospace';
+    octx.fillStyle = color;
+    for (let fi=0; fi<a.frames.length; fi++){
+      const f = a.frames[fi];
+      const sel = state.selectedFrame &&
+        state.selectedFrame.animIdx === ai && state.selectedFrame.frameIdx === fi;
+      octx.lineWidth = sel ? 3 : (isActive ? 2 : 1);
+      octx.strokeRect(f.x + 0.5, f.y + 0.5, f.w - 1, f.h - 1);
+      // label
+      octx.fillStyle = color;
+      octx.fillRect(f.x, f.y - 14, Math.min(f.w, 80), 13);
+      octx.fillStyle = '#0a1220';
+      octx.fillText(`${a.name}#${fi}`, f.x + 3, f.y - 3);
+      // resize handle
+      if (sel){
+        octx.fillStyle = color;
+        octx.fillRect(f.x + f.w - 6, f.y + f.h - 6, 8, 8);
+      }
+    }
+  }
+  // Draw active drag rect
+  if (state.drag && state.drag.mode === 'draw' && state.drag.cur){
+    const { startX, startY, cur } = state.drag;
+    const x = Math.min(startX, cur.x), y = Math.min(startY, cur.y);
+    const w = Math.abs(cur.x - startX), h = Math.abs(cur.y - startY);
+    octx.strokeStyle = '#fff';
+    octx.setLineDash([4,3]);
+    octx.lineWidth = 1;
+    octx.strokeRect(x+0.5, y+0.5, w-1, h-1);
+    octx.setLineDash([]);
+  }
+}
+
+// ============================================================
+// Right panel
+// ============================================================
+function renderAnims(){
+  animsDiv.innerHTML = '';
+  for (let ai=0; ai<state.anims.length; ai++){
+    const a = state.anims[ai];
+    const div = document.createElement('div');
+    div.className = 'anim' + (ai === state.activeAnimIdx ? ' active' : '');
+    const color = ANIM_COLORS[ai % ANIM_COLORS.length];
+    div.style.borderLeftColor = color;
+    div.innerHTML = `
+      <div class="anim-head">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${color}"></span>
+        <input class="name-input" type="text" value="${a.name}" style="flex:1;background:#0a1220;border:1px solid #233557;color:#cfe6ff;padding:3px 6px;border-radius:4px;font-family:ui-monospace,monospace;font-size:13px;" />
+        <span class="count">${a.frames.length}f</span>
+        <button class="del-anim danger" title="Delete animation">✕</button>
+      </div>
+      <div class="frames"></div>
+    `;
+    const head = div.querySelector('.anim-head');
+    head.addEventListener('click', (e)=>{
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+      state.activeAnimIdx = ai; state.selectedFrame = null;
+      renderAnims(); drawOverlay();
+    });
+    div.querySelector('.name-input').addEventListener('change', (e)=>{
+      a.name = e.target.value.trim() || 'unnamed';
+      saveLocal(); drawOverlay();
+    });
+    div.querySelector('.del-anim').addEventListener('click', (e)=>{
+      e.stopPropagation();
+      if (!confirm(`Delete animation "${a.name}" (${a.frames.length} frames)?`)) return;
+      state.anims.splice(ai, 1);
+      if (state.anims.length === 0) state.anims.push({name:'idle', frames:[]});
+      state.activeAnimIdx = Math.max(0, Math.min(state.activeAnimIdx, state.anims.length-1));
+      state.selectedFrame = null;
+      saveLocal(); renderAnims(); drawOverlay();
+    });
+
+    const fdiv = div.querySelector('.frames');
+    for (let fi=0; fi<a.frames.length; fi++){
+      const f = a.frames[fi];
+      const wrap = document.createElement('div');
+      wrap.className = 'frame' + (state.selectedFrame &&
+        state.selectedFrame.animIdx === ai && state.selectedFrame.frameIdx === fi ? ' selected' : '');
+      const c = document.createElement('canvas');
+      const PREVIEW = 64;
+      c.width = PREVIEW; c.height = PREVIEW;
+      drawFramePreview(c, f);
+      wrap.appendChild(c);
+      const x = document.createElement('div');
+      x.className = 'x'; x.textContent = '×';
+      x.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        a.frames.splice(fi, 1);
+        if (state.selectedFrame && state.selectedFrame.animIdx === ai && state.selectedFrame.frameIdx === fi) state.selectedFrame = null;
+        saveLocal(); renderAnims(); drawOverlay();
+      });
+      wrap.appendChild(x);
+      wrap.addEventListener('click', ()=>{
+        state.activeAnimIdx = ai;
+        state.selectedFrame = { animIdx: ai, frameIdx: fi };
+        renderAnims(); drawOverlay();
+        scrollToFrame(f);
+      });
+      fdiv.appendChild(wrap);
+    }
+    animsDiv.appendChild(div);
+  }
+}
+
+function drawFramePreview(c, f){
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  if (!state.img || f.w <= 0 || f.h <= 0) return;
+  const scale = Math.min(c.width/f.w, c.height/f.h);
+  const dw = f.w*scale, dh = f.h*scale;
+  const dx = (c.width - dw)/2, dy = (c.height - dh)/2;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(state.img, f.x, f.y, f.w, f.h, dx, dy, dw, dh);
+}
+
+function scrollToFrame(f){
+  const cx = (f.x + f.w/2) * state.zoom + 20;
+  const cy = (f.y + f.h/2) * state.zoom + 20;
+  stage.scrollTo({ left: cx - stage.clientWidth/2, top: cy - stage.clientHeight/2, behavior:'smooth' });
+}
+
+// ============================================================
+// Mouse interaction on the sheet
+// ============================================================
+function eventToSheet(e){
+  const rect = sheetCanvas.getBoundingClientRect();
+  return {
+    x: Math.round((e.clientX - rect.left) / state.zoom),
+    y: Math.round((e.clientY - rect.top) / state.zoom),
+  };
+}
+function hitTest(p){
+  // Returns {animIdx, frameIdx, edge:'corner'|'inside'|null}
+  for (let ai=state.anims.length-1; ai>=0; ai--){
+    const a = state.anims[ai];
+    for (let fi=a.frames.length-1; fi>=0; fi--){
+      const f = a.frames[fi];
+      // resize handle (bottom-right corner)
+      if (state.selectedFrame && state.selectedFrame.animIdx === ai && state.selectedFrame.frameIdx === fi){
+        if (p.x >= f.x + f.w - 8 && p.x <= f.x + f.w + 4 &&
+            p.y >= f.y + f.h - 8 && p.y <= f.y + f.h + 4){
+          return { animIdx: ai, frameIdx: fi, edge:'corner' };
+        }
+      }
+      if (p.x >= f.x && p.x < f.x + f.w && p.y >= f.y && p.y < f.y + f.h){
+        return { animIdx: ai, frameIdx: fi, edge:'inside' };
+      }
+    }
+  }
+  return null;
+}
+
+sheetCanvas.addEventListener('mousedown', (e)=>{
+  if (!state.img) return;
+  const p = eventToSheet(e);
+  const hit = hitTest(p);
+  if (hit){
+    state.activeAnimIdx = hit.animIdx;
+    state.selectedFrame = { animIdx: hit.animIdx, frameIdx: hit.frameIdx };
+    const f = state.anims[hit.animIdx].frames[hit.frameIdx];
+    state.drag = {
+      mode: hit.edge === 'corner' ? 'resize' : 'move',
+      startX: p.x, startY: p.y,
+      origX: f.x, origY: f.y, origW: f.w, origH: f.h,
+    };
+  } else {
+    // start a new draw
+    state.selectedFrame = null;
+    state.drag = { mode: 'draw', startX: p.x, startY: p.y, cur: p };
+  }
+  renderAnims(); drawOverlay();
+});
+window.addEventListener('mousemove', (e)=>{
+  if (!state.drag || !state.img) return;
+  const p = eventToSheet(e);
+  const d = state.drag;
+  if (d.mode === 'draw'){
+    d.cur = p;
+    drawOverlay();
+  } else if (d.mode === 'move'){
+    const f = state.anims[state.selectedFrame.animIdx].frames[state.selectedFrame.frameIdx];
+    f.x = Math.max(0, Math.min(state.img.width - f.w,  d.origX + (p.x - d.startX)));
+    f.y = Math.max(0, Math.min(state.img.height - f.h, d.origY + (p.y - d.startY)));
+    drawOverlay();
+  } else if (d.mode === 'resize'){
+    const f = state.anims[state.selectedFrame.animIdx].frames[state.selectedFrame.frameIdx];
+    f.w = Math.max(4, Math.min(state.img.width  - f.x, d.origW + (p.x - d.startX)));
+    f.h = Math.max(4, Math.min(state.img.height - f.y, d.origH + (p.y - d.startY)));
+    drawOverlay();
+  }
+});
+window.addEventListener('mouseup', (e)=>{
+  if (!state.drag) return;
+  const d = state.drag;
+  if (d.mode === 'draw'){
+    const x1 = Math.min(d.startX, d.cur.x), y1 = Math.min(d.startY, d.cur.y);
+    const w  = Math.abs(d.cur.x - d.startX), h = Math.abs(d.cur.y - d.startY);
+    if (w >= 4 && h >= 4){
+      const a = state.anims[state.activeAnimIdx];
+      a.frames.push({ x: x1, y: y1, w, h });
+      state.selectedFrame = { animIdx: state.activeAnimIdx, frameIdx: a.frames.length - 1 };
+    }
+  }
+  state.drag = null;
+  saveLocal();
+  renderAnims();
+  drawOverlay();
+});
+
+window.addEventListener('keydown', (e)=>{
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if ((e.code === 'Delete' || e.code === 'Backspace') && state.selectedFrame){
+    const { animIdx, frameIdx } = state.selectedFrame;
+    state.anims[animIdx].frames.splice(frameIdx, 1);
+    state.selectedFrame = null;
+    saveLocal(); renderAnims(); drawOverlay();
+    e.preventDefault();
+  }
+  // Arrow keys nudge selected frame
+  if (state.selectedFrame){
+    const f = state.anims[state.selectedFrame.animIdx].frames[state.selectedFrame.frameIdx];
+    const step = e.shiftKey ? 8 : 1;
+    if (e.code === 'ArrowLeft')  { f.x -= step; e.preventDefault(); }
+    if (e.code === 'ArrowRight') { f.x += step; e.preventDefault(); }
+    if (e.code === 'ArrowUp')    { f.y -= step; e.preventDefault(); }
+    if (e.code === 'ArrowDown')  { f.y += step; e.preventDefault(); }
+    saveLocal(); renderAnims(); drawOverlay();
+  }
+});
+
+// ============================================================
+// Toolbar buttons
+// ============================================================
+$('#sheetSel').addEventListener('change', (e)=> loadSheet(e.target.value));
+$('#zoomIn').addEventListener('input', (e)=>{
+  state.zoom = parseFloat(e.target.value); applyZoom(); drawOverlay();
+});
+$('#newAnimBtn').addEventListener('click', ()=>{
+  const name = prompt('Animation name:', 'idle_' + (state.anims.length+1));
+  if (!name) return;
+  state.anims.push({ name: name.trim(), frames: [] });
+  state.activeAnimIdx = state.anims.length - 1;
+  state.selectedFrame = null;
+  saveLocal(); renderAnims(); drawOverlay();
+});
+$('#renameSheetBtn').addEventListener('click', ()=>{
+  state.sheetKey = $('#sheetKeyInput').value.trim() || guessKey();
+  saveLocal(); toast('Sheet key set to ' + state.sheetKey);
+});
+$('#sheetKeyInput').addEventListener('change', ()=>{
+  state.sheetKey = $('#sheetKeyInput').value.trim() || guessKey();
+  saveLocal();
+});
+
+// ---- auto-slice the *active animation's bounding row* ----
+$('#autoSliceBtn').addEventListener('click', ()=>{
+  if (!state.img) return;
+  const a = state.anims[state.activeAnimIdx];
+  // If active anim has no frames, ask user to draw a row rect first OR use selected row.
+  if (a.frames.length === 0){
+    toast('Draw one big rectangle covering the whole row, then click Auto-slice. The row will be split into frames.', 4500);
+    return;
+  }
+  // Use the last frame's bbox as the row rect, and split it.
+  const row = a.frames.pop();
+  const detected = autoSliceRow(row);
+  if (detected.length === 0){
+    a.frames.push(row); // restore
+    toast('No frames detected (check bg / try a tighter rect)');
+    drawOverlay(); renderAnims(); return;
+  }
+  for (const f of detected) a.frames.push(f);
+  state.selectedFrame = null;
+  saveLocal(); renderAnims(); drawOverlay();
+  toast('Auto-detected '+detected.length+' frames');
+});
+
+function autoSliceRow(row){
+  const data = sctx.getImageData(row.x, row.y, row.w, row.h);
+  const d = data.data, W = data.width, H = data.height;
+  // Sample bg from row corners.
+  const samples = [
+    [d[0],d[1],d[2]],
+    [d[(W-1)*4],d[(W-1)*4+1],d[(W-1)*4+2]],
+    [d[(H-1)*W*4],d[(H-1)*W*4+1],d[(H-1)*W*4+2]],
+    [d[((H-1)*W+(W-1))*4],d[((H-1)*W+(W-1))*4+1],d[((H-1)*W+(W-1))*4+2]],
+  ];
+  const med = (k) => samples.map(s=>s[k]).sort((a,b)=>a-b)[2];
+  const br = med(0), bg = med(1), bb = med(2);
+  const TOL = 22;
+  const isBg = (r,g,b) =>
+    Math.abs(r-br)<=TOL && Math.abs(g-bg)<=TOL && Math.abs(b-bb)<=TOL;
+
+  const colFg = new Int32Array(W);
+  for (let y=0; y<H; y++){
+    for (let x=0; x<W; x++){
+      const i = (y*W+x)*4;
+      if (d[i+3] >= 5 && !isBg(d[i],d[i+1],d[i+2])) colFg[x]++;
+    }
+  }
+  const MIN_GAP = 4;
+  const runs = [];
+  let inRun = false, x0 = 0, gap = 0;
+  for (let x=0; x<W; x++){
+    if (colFg[x] >= 1){
+      if (!inRun){ inRun = true; x0 = x; }
+      gap = 0;
+    } else if (inRun){
+      gap++;
+      if (gap >= MIN_GAP){ runs.push([x0, x-gap]); inRun = false; }
+    }
+  }
+  if (inRun) runs.push([x0, W-1]);
+
+  const frames = [];
+  for (const [sx0, sx1] of runs){
+    let yMin = H, yMax = -1;
+    for (let y=0; y<H; y++){
+      for (let x=sx0; x<=sx1; x++){
+        const i = (y*W+x)*4;
+        if (d[i+3] >= 5 && !isBg(d[i],d[i+1],d[i+2])){
+          if (y < yMin) yMin = y;
+          if (y > yMax) yMax = y;
+          break;
+        }
+      }
+    }
+    if (yMax < yMin) continue;
+    const w = sx1-sx0+1, h = yMax-yMin+1;
+    if (h < 20 || w < 10) continue;  // skip labels/noise
+    frames.push({ x: row.x + sx0, y: row.y + yMin, w, h });
+  }
+  return frames;
+}
+
+// ---- Export / Import JSON ----
+$('#exportBtn').addEventListener('click', async ()=>{
+  const out = {};
+  out[state.sheetKey] = {
+    sheet: state.sheetURL,
+    animations: {},
+  };
+  for (const a of state.anims){
+    if (a.frames.length === 0) continue;
+    out[state.sheetKey].animations[a.name] = a.frames.map(f => ({...f}));
+  }
+  const text = JSON.stringify(out, null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Copied JSON to clipboard ('+text.length+' chars)');
+  } catch {
+    // fallback: download as file
+    const blob = new Blob([text], { type:'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = state.sheetKey + '.slices.json';
+    a.click();
+    toast('Downloaded ' + a.download);
+  }
+  console.log(text);
+});
+$('#importBtn').addEventListener('click', ()=>{
+  const text = prompt('Paste JSON for this sheet:');
+  if (!text) return;
+  try {
+    const obj = JSON.parse(text);
+    const key = Object.keys(obj)[0];
+    const ent = obj[key];
+    state.sheetKey = key;
+    $('#sheetKeyInput').value = key;
+    state.anims = Object.entries(ent.animations || ent).map(([name, frames])=> ({
+      name, frames: frames.map(f => ({x:f.x|0, y:f.y|0, w:f.w|0, h:f.h|0}))
+    }));
+    if (state.anims.length === 0) state.anims = [{name:'idle', frames:[]}];
+    state.activeAnimIdx = 0; state.selectedFrame = null;
+    saveLocal(); renderAnims(); drawOverlay();
+    toast('Imported ' + state.anims.length + ' animations');
+  } catch (e){ toast('Invalid JSON: ' + e.message); }
+});
+
+// ============================================================
+// Boot
+// ============================================================
+loadSheet($('#sheetSel').value);
+applyZoom();
+</script>
+</body>
+</html>

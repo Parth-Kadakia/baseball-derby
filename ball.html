@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>Ball physics test</title>
+<style>
+  html,body { margin:0; height:100%; background:#000; overflow:hidden;
+    font-family: monospace; color:#fff; }
+  #game { position:fixed; inset:0; }
+  #info { position:fixed; top:10px; left:10px; font-size:13px;
+    background:rgba(0,0,0,.6); padding:6px 10px; border-radius:6px;
+    line-height:1.5; pointer-events:none; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="info">
+  1=ballFrame &nbsp; 2=trailFastPitch &nbsp; 3=trailSlow<br>
+  4=bounceDirt &nbsp; 5=bounceHard &nbsp; 6=bounceLow<br>
+  Q=arc (trail in air → bounce on ground → roll)<br>
+  current: <span id="cur">—</span>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.161.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+const canvas = document.getElementById('game');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x102030, 1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 1.0, 6);
+camera.lookAt(0, 1.0, 0);
+addEventListener('resize', ()=>{
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+});
+
+scene.add(new THREE.AmbientLight(0xffffff, 1));
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshBasicMaterial({ color: 0x2d7a33 })
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(40, 40, 0xffffff, 0x55aa55);
+grid.position.y = 0.001;
+scene.add(grid);
+
+const pole = new THREE.Mesh(
+  new THREE.BoxGeometry(0.05, 1.0, 0.05),
+  new THREE.MeshBasicMaterial({ color: 0xff3030 })
+);
+pole.position.set(-0.8, 0.5, 0);
+scene.add(pole);
+
+// ============== sprite slicing ==============
+function loadImage(src){
+  return new Promise((res, rej)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=> res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+function makeBgTest(sctx, W, H){
+  const samples = [];
+  for (const [x,y] of [[2,2],[W-3,2],[2,H-3],[W-3,H-3]]) {
+    const p = sctx.getImageData(x,y,1,1).data;
+    samples.push([p[0],p[1],p[2]]);
+  }
+  const sorted = (k) => samples.map(s=>s[k]).sort((a,b)=>a-b);
+  const br = sorted(0)[2], bg = sorted(1)[2], bb = sorted(2)[2];
+  const TOL = 8;
+  return (r,g,b,a) => {
+    if (a !== undefined && a < 5) return true;
+    return Math.abs(r-br) <= TOL && Math.abs(g-bg) <= TOL && Math.abs(b-bb) <= TOL;
+  };
+}
+
+function cutSprite(sctx, rx, ry, rw, rh, isBg){
+  const data = sctx.getImageData(rx, ry, rw, rh);
+  const d = data.data;
+  const W = data.width, H = data.height;
+  for (let i=0; i<d.length; i+=4){
+    if (d[i+3] < 5 || isBg(d[i], d[i+1], d[i+2], d[i+3])){ d[i+3] = 0; }
+  }
+  let miX = W, miY = H, maX = -1, maY = -1;
+  for (let y=0; y<H; y++){
+    for (let x=0; x<W; x++){
+      if (d[(y*W+x)*4+3] > 0){
+        if (x<miX) miX=x; if (y<miY) miY=y;
+        if (x>maX) maX=x; if (y>maY) maY=y;
+      }
+    }
+  }
+  if (maX < 0){ const c=document.createElement('canvas'); c.width=1; c.height=1; return c; }
+  const tw = maX-miX+1, th = maY-miY+1;
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  tmp.getContext('2d').putImageData(data, 0, 0);
+  const out = document.createElement('canvas');
+  out.width = tw; out.height = th;
+  out.getContext('2d').drawImage(tmp, miX, miY, tw, th, 0, 0, tw, th);
+  return out;
+}
+
+async function sliceFromJson(spec){
+  const img = await loadImage(spec.sheet);
+  const src = document.createElement('canvas');
+  src.width = img.width; src.height = img.height;
+  const sctx = src.getContext('2d', { willReadFrequently:true });
+  sctx.drawImage(img, 0, 0);
+  const isBg = makeBgTest(sctx, img.width, img.height);
+
+  const out = {};
+  for (const [name, rects] of Object.entries(spec.animations)){
+    out[name] = rects.map(r => {
+      const c = cutSprite(sctx, r.x|0, r.y|0, r.w|0, r.h|0, isBg);
+      const tex = new THREE.CanvasTexture(c);
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.generateMipmaps = false;
+      return { texture: tex, w: c.width, h: c.height };
+    });
+  }
+  return out;
+}
+
+/**
+ * Ball sprite: like Actor but supports per-animation anchor (bottom for
+ * ground impacts, center for in-flight trails) and Y position.
+ */
+class Ball {
+  constructor(animations){
+    this.animations = animations;
+    this.mat = new THREE.MeshBasicMaterial({
+      map:null, transparent:true, alphaTest:0.5, side:THREE.DoubleSide,
+    });
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1), this.mat);
+    scene.add(this.mesh);
+    this.pixelScale = 0.011;
+    this.frame = 0; this.timer = 0; this.fps = 8; this.loop = true;
+    this.currentName = null; this.onDone = null;
+    this.anchor = 'bottom'; // 'bottom' or 'center'
+    this.posY = 0;          // ground-y for bottom anchor, center-y for center
+  }
+  play(name, opts={}){
+    if (!this.animations[name]){ console.warn('missing', name); return; }
+    const { fps=8, loop=true, anchor='bottom', y=0, onDone=null } = opts;
+    this.currentName = name; this.fps = fps; this.loop = loop;
+    this.anchor = anchor; this.posY = y; this.onDone = onDone;
+    this.frame = 0; this.timer = 0;
+    document.getElementById('cur').textContent = name;
+    this._apply();
+  }
+  playSequence(steps){
+    let i = 0;
+    const next = () => {
+      if (i >= steps.length) return;
+      const [name, opts] = steps[i++];
+      this.play(name, { ...opts, onDone: opts.loop ? null : next });
+    };
+    next();
+  }
+  _apply(){
+    const f = this.animations[this.currentName][this.frame];
+    this.mat.map = f.texture; this.mat.needsUpdate = true;
+    const w = f.w * this.pixelScale;
+    const h = f.h * this.pixelScale;
+    this.mesh.scale.set(w, h, 1);
+    const cy = this.anchor === 'bottom' ? this.posY + h/2 : this.posY;
+    this.mesh.position.set(0, cy, 0);
+  }
+  update(dt){
+    if (!this.currentName) return;
+    this.timer += dt;
+    const spf = 1/this.fps;
+    const frames = this.animations[this.currentName];
+    let finished = false;
+    while (this.timer >= spf){
+      this.timer -= spf; this.frame++;
+      if (this.frame >= frames.length){
+        if (this.loop) this.frame = 0;
+        else { this.frame = frames.length-1; finished = true; break; }
+      }
+    }
+    this._apply();
+    if (finished && this.onDone){ const cb = this.onDone; this.onDone = null; cb(); }
+  }
+}
+
+let ball;
+(async ()=>{
+  const spec = await (await fetch('./slices/ball_physics.json')).json();
+  const anims = await sliceFromJson(spec.ball_physics);
+  console.log('loaded animations:', Object.keys(anims));
+  ball = new Ball(anims);
+  ball.play('ball frame', { fps:14, loop:true, anchor:'center', y:1.0 });
+})();
+
+const ANIMS = {
+  Digit1: ['ball frame',             { fps:14, loop:true,  anchor:'center', y:1.0 }],
+  Digit2: ['speed trail fast pitch', { fps:18, loop:true,  anchor:'center', y:1.2 }],
+  Digit3: ['speed trail slow',       { fps:10, loop:true,  anchor:'center', y:1.2 }],
+  Digit4: ['bounce dirt',            { fps:14, loop:false, anchor:'bottom', y:0   }],
+  Digit5: ['bounce hard',            { fps:14, loop:false, anchor:'bottom', y:0   }],
+  Digit6: ['bounce low',             { fps:14, loop:false, anchor:'bottom', y:0   }],
+};
+const SEQS = {
+  KeyQ: [
+    ['speed trail fast pitch', { fps:18, loop:false, anchor:'center', y:1.4 }],
+    ['bounce dirt',            { fps:14, loop:false, anchor:'bottom', y:0   }],
+    ['ball frame',             { fps:8,  loop:true,  anchor:'bottom', y:0   }],
+  ],
+};
+
+addEventListener('keydown', (e)=>{
+  if (!ball || e.repeat) return;
+  if (ANIMS[e.code]){ const [n,o] = ANIMS[e.code]; ball.play(n, o); return; }
+  if (SEQS[e.code]) ball.playSequence(SEQS[e.code]);
+});
+
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now-last)/1000); last = now;
+  if (ball) ball.update(dt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

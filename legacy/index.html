@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DIAMOND STORM — Arcade Baseball</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; background:#000; overflow:hidden;
+    font-family: 'Impact', 'Arial Black', sans-serif; color:#fff; user-select:none; }
+  #game { position:fixed; inset:0; }
+  #ui { position:fixed; inset:0; pointer-events:none; z-index:10; }
+
+  .topbar {
+    position:absolute; top:18px; left:0; right:0; display:flex; justify-content:space-between;
+    padding: 0 34px; font-size: 28px; letter-spacing:2px;
+    text-shadow: 0 0 12px #000, 2px 2px 0 #000;
+  }
+  .topbar .block { background: rgba(5,15,35,.6); border:2px solid rgba(120,200,255,.6);
+    padding: 8px 20px; border-radius: 10px; box-shadow: 0 0 22px rgba(70,180,255,.35) inset; }
+  .label { font-size: 13px; color:#7fd8ff; letter-spacing:3px; }
+  .val { font-size: 30px; color:#fff; }
+  .val.gold { color:#ffd24a; text-shadow: 0 0 16px #ffb522, 2px 2px 0 #000; }
+  .val.red  { color:#ff5a5a; }
+
+  #strikesBalls { position:absolute; top:110px; left:34px; font-size:16px; color:#cfe7ff;
+    letter-spacing:3px; background:rgba(5,15,35,.6); border:2px solid rgba(120,200,255,.4);
+    padding:6px 14px; border-radius:8px; }
+  .dot { display:inline-block; width:12px; height:12px; border-radius:50%;
+    margin:0 3px; background:#233; border:1px solid #567; vertical-align:middle; }
+  .dot.on.strike { background:#ff4a3d; box-shadow:0 0 10px #ff4a3d; border-color:#ff8a7d; }
+  .dot.on.ball   { background:#4afc7a; box-shadow:0 0 10px #4afc7a; border-color:#8afdaa; }
+
+  /* Power meter */
+  #meterWrap { position:absolute; bottom:38px; left:50%; transform:translateX(-50%);
+    width: 520px; height: 34px; background:rgba(0,0,0,.55);
+    border:2px solid rgba(120,200,255,.55); border-radius:20px; overflow:hidden;
+    box-shadow: 0 0 20px rgba(70,180,255,.4); }
+  #meterFill { height:100%; width:0%;
+    background: linear-gradient(90deg, #3ef07a 0%, #ffdb3a 55%, #ff4d2e 85%, #ff2ad6 100%);
+    transition: width .03s linear; box-shadow: 0 0 18px #ff8a3a inset; }
+  #meterLabel { position:absolute; bottom:78px; left:50%; transform:translateX(-50%);
+    font-size: 18px; letter-spacing:6px; color:#ffd24a;
+    text-shadow: 0 0 12px #ff7a00, 2px 2px 0 #000; }
+
+  /* Timing window */
+  #timingWrap { position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+    width: 320px; height: 10px; background:rgba(0,0,0,.5);
+    border:1px solid #5af; border-radius:8px; display:none; }
+  #timingBar { position:absolute; top:-4px; width:4px; height:18px; background:#fff;
+    box-shadow:0 0 10px #fff; border-radius:2px; }
+  #timingPerfect { position:absolute; top:0; left:46%; width:8%; height:100%;
+    background:linear-gradient(90deg,#fff1a8,#ffcf3b,#fff1a8); border-radius:4px;
+    box-shadow:0 0 14px #ffcf3b; }
+
+  /* Popup text */
+  #popups { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+  .popup { position:absolute; font-family:'Impact','Arial Black',sans-serif;
+    font-size: 96px; font-weight: 900; letter-spacing:2px;
+    text-transform: uppercase; white-space:nowrap;
+    -webkit-text-stroke: 3px #0a0a0a;
+    filter: drop-shadow(0 0 16px rgba(255,180,40,.8));
+    animation: popIn 1.1s cubic-bezier(.2,.8,.2,1.2) forwards;
+    transform-origin: center;
+  }
+  @keyframes popIn {
+    0%   { transform: translate(-50%,-50%) scale(.3) rotate(-8deg); opacity:0; }
+    20%  { transform: translate(-50%,-50%) scale(1.15) rotate(2deg); opacity:1; }
+    70%  { transform: translate(-50%,-50%) scale(1) rotate(-1deg); opacity:1; }
+    100% { transform: translate(-50%, -180%) scale(.85) rotate(0); opacity:0; }
+  }
+  .pcolor-gold  { color:#ffdd3a; }
+  .pcolor-red   { color:#ff3a3a; }
+  .pcolor-green { color:#4afc7a; }
+  .pcolor-blue  { color:#3ad6ff; }
+  .pcolor-purple{ color:#d36bff; }
+
+  /* Title screen */
+  #title { position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    background: radial-gradient(ellipse at center, rgba(20,40,80,.2) 0%, rgba(0,0,0,.85) 75%);
+    pointer-events:auto; z-index:20; }
+  #title h1 { font-size: 130px; letter-spacing: 8px;
+    background: linear-gradient(180deg,#fff6a8 0%,#ffcf3b 40%,#ff5e2a 80%,#b4004a 100%);
+    -webkit-background-clip: text; background-clip: text; color:transparent;
+    -webkit-text-stroke: 3px #0a0a0a;
+    filter: drop-shadow(0 6px 0 rgba(0,0,0,.8)) drop-shadow(0 0 24px rgba(255,140,40,.6));
+    animation: wobble 2.5s ease-in-out infinite; }
+  @keyframes wobble { 50%{ transform: scale(1.03) rotate(-1deg);} }
+  #title h2 { font-size:28px; letter-spacing:10px; color:#9ad8ff; margin-top:-6px;
+    text-shadow:0 0 12px #59aaff; }
+  #title p  { font-size: 18px; color:#cfe7ff; margin-top:32px; max-width:680px; line-height:1.6; letter-spacing:1.5px; }
+  #startBtn { margin-top: 42px; padding: 18px 48px; font-size: 32px; letter-spacing:6px;
+    background: linear-gradient(180deg,#ffe066,#ff7a2a); color:#2a0a00; border:3px solid #fff;
+    border-radius: 16px; cursor:pointer; box-shadow: 0 0 30px rgba(255,160,40,.8);
+    font-family:'Impact',sans-serif; text-shadow:0 1px 0 #fff7c8; }
+  #startBtn:hover { transform: translateY(-2px) scale(1.04); }
+  .keys { margin-top:18px; color:#8bb; font-size:15px; letter-spacing:3px; }
+  .keys kbd { display:inline-block; padding:3px 10px; border:2px solid #5af;
+    background:rgba(0,30,80,.4); border-radius:6px; margin:0 4px; color:#fff; }
+
+  /* Crosshair for pitch reading */
+  #ballMarker { position:absolute; width:46px; height:46px; border:3px solid rgba(255,255,255,.65);
+    border-radius:50%; transform: translate(-50%,-50%);
+    box-shadow: 0 0 12px rgba(255,255,255,.5) inset, 0 0 8px rgba(255,255,255,.5);
+    display:none; mix-blend-mode: screen; }
+
+  /* Flash */
+  #flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none;
+    transition: opacity .15s; }
+  /* Vignette */
+  #vignette { position:absolute; inset:0; pointer-events:none;
+    box-shadow: inset 0 0 260px 40px rgba(0,0,0,.85); }
+
+  .hint { position:absolute; bottom:96px; left:50%; transform:translateX(-50%);
+    color:#9ad8ff; letter-spacing:6px; font-size:14px; opacity:.85;
+    text-shadow:0 0 8px #000; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="vignette"></div>
+<div id="flash"></div>
+
+<div id="ui">
+  <div class="topbar">
+    <div class="block"><div class="label">SCORE</div><div class="val gold" id="scoreVal">0</div></div>
+    <div class="block" style="text-align:center"><div class="label">PITCH</div><div class="val" id="pitchVal">—</div></div>
+    <div class="block" style="text-align:right"><div class="label">COMBO</div><div class="val" id="comboVal">x1</div></div>
+  </div>
+
+  <div id="strikesBalls">
+    STRIKES <span id="strDots"></span> &nbsp;·&nbsp; BALLS <span id="balDots"></span> &nbsp;·&nbsp; OUTS <span id="outDots"></span>
+  </div>
+
+  <div id="meterLabel">POWER</div>
+  <div id="meterWrap"><div id="meterFill"></div></div>
+  <div id="timingWrap">
+    <div id="timingPerfect"></div>
+    <div id="timingBar"></div>
+  </div>
+
+  <div id="ballMarker"></div>
+  <div id="popups"></div>
+  <div class="hint" id="hint">HOLD [SPACE] TO CHARGE · RELEASE TO SWING · [A/D] AIM</div>
+</div>
+
+<div id="title">
+  <h2>ARCADE BASEBALL</h2>
+  <h1>DIAMOND STORM</h1>
+  <p>Step into the box. The pitcher is winding up an elemental storm — fireballs, ice, lightning, and shadow.
+     Charge your bat, read the pitch, and swing for a PERFECT HIT to trigger slow-mo and launch epic home runs.</p>
+  <button id="startBtn">PLAY BALL</button>
+  <div class="keys"><kbd>SPACE</kbd> charge/swing &nbsp; <kbd>A</kbd>/<kbd>D</kbd> aim &nbsp; <kbd>S</kbd> duck &nbsp; <kbd>W</kbd> jump</div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.161.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =========================================================================
+   DIAMOND STORM — arcade baseball built on three.js w/ pixel-sprite billboards
+   ========================================================================= */
+
+const SHEETS = {
+  batsman:  './spritsheets/Batsman.png',
+  pitcher:  './spritsheets/Pitching.png',
+  catcher:  './spritsheets/Catching.png',
+  fielder:  './spritsheets/Fielders.png',
+  running:  './spritsheets/Running.png',
+  special:  './spritsheets/Special.png',
+  ball:     './spritsheets/ball physics.png',
+  ui:       './spritsheets/UI.png',
+};
+
+// ---- sprite region definitions (approximate UVs into the sheets) ----
+// Every sheet is 1536x1024. Each row header uses ~40px. Sprite cells are ~128x220.
+// We define animation strips as {x, y, w, h, cols} in pixels. UV built on the fly.
+function strip(x,y,w,h,cols) { return {x,y,w,h,cols}; }
+// All sheets are 1536 x 1024. Rows are ~256 tall w/ a ~40px label band at the top.
+// We use the "character area" of each cell (y offset ~56..248) and 128px-wide frames.
+const BATSMAN = {
+  idle:     strip(  8,  60, 512, 200, 4),
+  preswing: strip(536, 60, 512, 200, 4),
+  swing:    strip(  8, 320, 768, 200, 6),
+  hit:      strip(776, 320, 256, 200, 2),
+  ready:    strip(1152,584, 384, 200, 3),
+  strikeout:strip(768, 584, 384, 200, 3),
+};
+const PITCHER = {
+  idle:    strip(  8,  60, 384, 200, 3),
+  windup:  strip(776, 60, 512, 200, 4),
+  pitch:   strip(  8, 320, 768, 200, 6),
+  follow:  strip(  8, 584, 512, 200, 4),
+};
+const CATCHER = {
+  idle:    strip(  8,  60, 256, 200, 2),
+  ready:   strip(  8, 820, 384, 200, 3),
+};
+// Ball sheet: we only use a rough 128x128 ball region from top-left
+const BALL_FRAME = { x: 20, y: 90, w: 96, h: 96 };
+
+// ===== three.js scene =====
+const canvas = document.getElementById('game');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x07101f, 1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0a1830, 60, 260);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 600);
+// Classic behind-the-plate broadcast angle. Home plate at origin, pitcher at +z.
+// Camera sits well behind home plate so the catcher is between us and the
+// batter, and we can see ground/field meet the batter's feet.
+camera.position.set(0, 3.6, -14);
+camera.lookAt(0, 2.6, 18);
+
+window.addEventListener('resize', ()=>{
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ===== lighting =====
+scene.add(new THREE.AmbientLight(0x8faacc, 0.65));
+const sun = new THREE.DirectionalLight(0xfff0cf, 1.2);
+sun.position.set(-30, 60, 20);
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0x6aa6ff, 0.6);
+rim.position.set(10, 20, -30);
+scene.add(rim);
+
+// ===== field =====
+const fieldMat = new THREE.MeshLambertMaterial({ color: 0x2d7a33 });
+const field = new THREE.Mesh(new THREE.CircleGeometry(180, 64), fieldMat);
+field.rotation.x = -Math.PI/2;
+field.position.y = 0;
+scene.add(field);
+
+// dirt infield (diamond shape — rotated square)
+const dirtMat = new THREE.MeshLambertMaterial({ color: 0xa8744a });
+const infield = new THREE.Mesh(new THREE.CircleGeometry(22, 40), dirtMat);
+infield.rotation.x = -Math.PI/2;
+infield.position.set(0, 0.01, 11);
+scene.add(infield);
+
+// Pitcher's mound
+const mound = new THREE.Mesh(new THREE.CylinderGeometry(2.5,3,0.3,24), dirtMat);
+mound.position.set(0, 0.15, 18.44);
+scene.add(mound);
+
+// Home plate
+const plate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.05, 1.1),
+  new THREE.MeshLambertMaterial({ color: 0xffffff }));
+plate.position.set(0, 0.03, 0);
+scene.add(plate);
+
+// Bases (1B, 2B, 3B)
+function makeBase(x,z) {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(1,0.1,1),
+    new THREE.MeshLambertMaterial({color:0xffffff}));
+  b.position.set(x,0.05,z); scene.add(b);
+}
+const BD = 18; // base distance (approx)
+makeBase(  BD/1.4, 0 + BD/1.4); // 1B
+makeBase(0, BD*1.4);            // 2B
+makeBase(-BD/1.4, 0 + BD/1.4);  // 3B
+
+// Base lines (chalk)
+const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+function baseLine(a,b){
+  const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]);
+  return new THREE.Line(g, lineMat);
+}
+scene.add(baseLine([0,0.05,0],[ 130,0.05,130]));
+scene.add(baseLine([0,0.05,0],[-130,0.05,130]));
+
+// Outfield wall
+const wallMat = new THREE.MeshLambertMaterial({ color: 0x0d2438 });
+const wall = new THREE.Mesh(new THREE.TorusGeometry(120, 1.4, 10, 64, Math.PI), wallMat);
+wall.rotation.x = -Math.PI/2;
+wall.position.set(0, 1.4, 0);
+scene.add(wall);
+// Yellow HR line atop the wall
+const hrLine = new THREE.Mesh(new THREE.TorusGeometry(120, 0.12, 8, 64, Math.PI),
+  new THREE.MeshBasicMaterial({ color: 0xffdd22 }));
+hrLine.rotation.x = -Math.PI/2;
+hrLine.position.set(0, 2.85, 0);
+scene.add(hrLine);
+
+// Stadium stands (simple tiered cylinder)
+for (let r=125, h=6, i=0; i<4; i++) {
+  const seat = new THREE.Mesh(
+    new THREE.CylinderGeometry(r+i*7, r+i*7+2, 3, 48, 1, true, -Math.PI/2, Math.PI),
+    new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(0.6, 0.3, 0.15+i*0.04), side: THREE.DoubleSide })
+  );
+  seat.position.set(0, h + i*2.2, 0);
+  scene.add(seat);
+}
+
+// Lights (tall poles)
+for (const [x,z] of [[-95,10],[95,10],[-70,110],[70,110]]) {
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.6,40,8),
+    new THREE.MeshLambertMaterial({color:0x3a4a5a}));
+  pole.position.set(x,20,z); scene.add(pole);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(1.4,12,12),
+    new THREE.MeshBasicMaterial({color:0xfff8b0}));
+  bulb.position.set(x,40,z); scene.add(bulb);
+  const pt = new THREE.PointLight(0xfff0a8, 1.0, 200); pt.position.set(x,38,z); scene.add(pt);
+}
+
+// Sky — simple gradient backdrop
+{
+  const skyGeo = new THREE.SphereGeometry(300, 24, 12);
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: { t: { value: 0 } },
+    vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);} ',
+    fragmentShader: `varying vec3 vP;
+      void main(){
+        float h = normalize(vP).y*0.5+0.5;
+        vec3 top = vec3(0.02,0.05,0.12);
+        vec3 mid = vec3(0.08,0.14,0.28);
+        vec3 bot = vec3(0.22,0.24,0.36);
+        vec3 col = mix(bot, mix(mid, top, smoothstep(0.3,1.0,h)), smoothstep(0.0,0.6,h));
+        // stars
+        vec2 uv = vP.xz*0.02;
+        float s = fract(sin(dot(floor(uv*40.0), vec2(127.1,311.7))) * 43758.5453);
+        float star = smoothstep(0.996, 1.0, s) * step(0.3, h);
+        col += vec3(star)*0.8;
+        gl_FragColor = vec4(col,1.0);
+      }`
+  });
+  const sky = new THREE.Mesh(skyGeo, skyMat);
+  scene.add(sky);
+}
+
+// ============== spritesheet SPLICER ===============
+// The sheets are single PNGs containing many animation strips laid out in rows,
+// each over a dark navy backdrop. We pre-splice them into per-frame THREE.CanvasTexture
+// instances with the navy color-keyed to transparent and each frame trimmed to the
+// tightest bounding box around the non-bg pixels. Frames are then indexed by animation.
+
+function loadImage(src){
+  return new Promise((res, rej)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=> res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+// Build a tight bg-color matcher by sampling the sheet's own corner.
+// (Prev heuristic was way too wide — it ate the sprites' dark outlines,
+//  disconnecting heads/arms/legs into separate components.)
+function makeBgTest(sctx, W, H){
+  // Sample four corners and average the cleanest two.
+  const samples = [];
+  for (const [x,y] of [[2,2],[W-3,2],[2,H-3],[W-3,H-3]]) {
+    const p = sctx.getImageData(x,y,1,1).data;
+    samples.push([p[0],p[1],p[2]]);
+  }
+  // Use the median per channel to be robust.
+  const sorted = (k) => samples.map(s=>s[k]).sort((a,b)=>a-b);
+  const br = sorted(0)[2], bg = sorted(1)[2], bb = sorted(2)[2];
+  const TOL = 8; // per-channel — tight enough to keep dark uniform pants/shoes
+                  // (which are very close to the navy bg) from being keyed away
+  return (r,g,b,a) => {
+    if (a !== undefined && a < 5) return true;
+    return Math.abs(r-br) <= TOL && Math.abs(g-bg) <= TOL && Math.abs(b-bb) <= TOL;
+  };
+}
+
+/**
+ * Cut a single sprite out of a sheet rect.
+ * - Sample bg color from sheet corners (caller passes isBg).
+ * - Color-key bg → alpha 0; build a binary fg mask.
+ * - Dilate fg by 2px (8-neighborhood) to bridge thin outline gaps that get
+ *   incorrectly keyed (otherwise heads/limbs split off as separate components).
+ * - Find largest 8-connected CC of dilated mask, biased toward frame center.
+ * - Crop to that CC's bbox; only keep original pixels inside the CC.
+ */
+function cutSprite(sctx, rx, ry, rw, rh, isBg){
+  const data = sctx.getImageData(rx, ry, rw, rh);
+  const d = data.data;
+  const W = data.width, H = data.height;
+
+  const fg = new Uint8Array(W*H);
+  for (let i=0, p=0; i<d.length; i+=4, p++){
+    if (d[i+3] < 5 || isBg(d[i], d[i+1], d[i+2], d[i+3])){
+      d[i+3] = 0;
+    } else {
+      fg[p] = 1;
+    }
+  }
+
+  const DILATE = 2;
+  let mask = fg;
+  for (let pass=0; pass<DILATE; pass++){
+    const next = new Uint8Array(W*H);
+    for (let y=0; y<H; y++){
+      for (let x=0; x<W; x++){
+        const i = y*W+x;
+        if (mask[i]){ next[i] = 1; continue; }
+        let hit = 0;
+        for (let dy=-1; dy<=1 && !hit; dy++){
+          for (let dx=-1; dx<=1 && !hit; dx++){
+            const nx=x+dx, ny=y+dy;
+            if (nx<0||ny<0||nx>=W||ny>=H) continue;
+            if (mask[ny*W+nx]) hit = 1;
+          }
+        }
+        if (hit) next[i] = 1;
+      }
+    }
+    mask = next;
+  }
+
+  const visited = new Uint8Array(W*H);
+  const stack = new Int32Array(W*H*2);
+  const cx0=W/2, cy0=H/2;
+  let bestCells=null, bestBbox=null, bestScore=-Infinity;
+  for (let sy=0; sy<H; sy++){
+    for (let sx=0; sx<W; sx++){
+      const i0 = sy*W+sx;
+      if (visited[i0] || !mask[i0]) continue;
+      let sp=0; stack[sp++]=sx; stack[sp++]=sy;
+      let count=0, miX=sx, miY=sy, maX=sx, maY=sy;
+      const cells=[];
+      while (sp>0){
+        const cy=stack[--sp], cx=stack[--sp];
+        if (cx<0||cy<0||cx>=W||cy>=H) continue;
+        const k=cy*W+cx;
+        if (visited[k] || !mask[k]) continue;
+        visited[k]=1; count++; cells.push(k);
+        if (cx<miX) miX=cx; if (cy<miY) miY=cy;
+        if (cx>maX) maX=cx; if (cy>maY) maY=cy;
+        stack[sp++]=cx+1; stack[sp++]=cy;
+        stack[sp++]=cx-1; stack[sp++]=cy;
+        stack[sp++]=cx;   stack[sp++]=cy+1;
+        stack[sp++]=cx;   stack[sp++]=cy-1;
+        stack[sp++]=cx+1; stack[sp++]=cy+1;
+        stack[sp++]=cx-1; stack[sp++]=cy+1;
+        stack[sp++]=cx+1; stack[sp++]=cy-1;
+        stack[sp++]=cx-1; stack[sp++]=cy-1;
+      }
+      const mx=(miX+maX)/2, my=(miY+maY)/2;
+      const score = count - Math.hypot(mx-cx0,my-cy0)*1.5;
+      if (score > bestScore){
+        bestScore = score; bestCells = cells; bestBbox = { miX, miY, maX, maY };
+      }
+    }
+  }
+
+  if (!bestCells){
+    const c = document.createElement('canvas'); c.width=1; c.height=1; return c;
+  }
+
+  const keep = new Uint8Array(W*H);
+  for (const k of bestCells) keep[k] = 1;
+  for (let k=0; k<W*H; k++) if (!keep[k]) d[k*4+3] = 0;
+
+  // Use the DILATED bbox so the canvas spans the full character including
+  // pixels keyed as bg (e.g., dark pants that match navy bg). If we tightened
+  // to fg-only pixels the canvas-bottom would sit at the waist whenever legs
+  // are color-keyed, planting the character into the ground at hip level.
+  const { miX, miY, maX, maY } = bestBbox;
+  const tw = maX-miX+1, th = maY-miY+1;
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  tmp.getContext('2d').putImageData(data, 0, 0);
+  const out = document.createElement('canvas');
+  out.width = tw; out.height = th;
+  out.getContext('2d').drawImage(tmp, miX, miY, tw, th, 0, 0, tw, th);
+  return out;
+}
+
+/**
+ * Build animations from a precise per-frame JSON spec produced by editor.html.
+ * Spec shape: { sheet:'./spritsheets/X.png', animations:{ name:[{x,y,w,h},...] } }
+ *
+ * For each named animation the frames are normalized to a SHARED canvas size
+ * (max W × max H over the set) and anchored bottom-center, so the character
+ * stays locked to the ground/anchor across the whole animation cycle (no
+ * jittering when the bbox shrinks/grows between poses).
+ */
+async function sliceFromJson(spec){
+  const img = await loadImage(spec.sheet);
+  const src = document.createElement('canvas');
+  src.width = img.width; src.height = img.height;
+  const sctx = src.getContext('2d', { willReadFrequently: true });
+  sctx.drawImage(img, 0, 0);
+  const isBg = makeBgTest(sctx, img.width, img.height);
+
+  const out = {};
+  for (const [name, rects] of Object.entries(spec.animations)){
+    out[name] = rects.map(r => {
+      const c = cutSprite(sctx, r.x|0, r.y|0, r.w|0, r.h|0, isBg);
+      const tex = new THREE.CanvasTexture(c);
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.generateMipmaps = false;
+      return { texture: tex, w: c.width, h: c.height };
+    });
+  }
+  return out;
+}
+
+/** Try to load a slice JSON; resolves to null on failure. */
+async function tryLoadSlices(url){
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+/** Slice a sheet into { animName: [{texture,w,h},...] } given strip defs. */
+async function sliceSheet(url, strips){
+  const img = await loadImage(url);
+  const src = document.createElement('canvas');
+  src.width = img.width; src.height = img.height;
+  const sctx = src.getContext('2d', { willReadFrequently: true });
+  sctx.drawImage(img, 0, 0);
+  const isBg = makeBgTest(sctx, img.width, img.height);
+
+  const out = {};
+  for (const [name, s] of Object.entries(strips)){
+    const frames = [];
+    const fw = Math.floor(s.w / s.cols);
+    for (let i=0; i<s.cols; i++){
+      const fx = Math.floor(s.x + i*fw);
+      const rx = Math.max(0, Math.min(fx, img.width-1));
+      const ry = Math.max(0, Math.min(s.y, img.height-1));
+      const rw = Math.max(1, Math.min(fw, img.width - rx));
+      const rh = Math.max(1, Math.min(s.h, img.height - ry));
+      const canvas = cutSprite(sctx, rx, ry, rw, rh, isBg);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.generateMipmaps = false;
+      frames.push({ texture: tex, w: canvas.width, h: canvas.height });
+    }
+    out[name] = frames;
+  }
+  return out;
+}
+
+/**
+ * Billboard with PIXEL-SCALE rendering and FEET-ANCHOR positioning.
+ *
+ * Each animation frame is its own tightly-cropped texture (different sizes are
+ * fine). The plane is sized as `frame.w * pixelScale` × `frame.h * pixelScale`,
+ * and positioned so the BOTTOM-CENTER of the plane sits at the configured
+ * (feetX, feetY, feetZ) world coordinate. This means:
+ *   • Source-art pixel size is consistent across frames (no scale jitter).
+ *   • Character's feet stay planted on the ground regardless of pose height.
+ *   • Tall poses (raised bat, jump) extend upward naturally.
+ */
+class SpriteBillboard {
+  constructor(animations){
+    this.animations = animations;
+    this.mat = new THREE.MeshBasicMaterial({
+      map: null, transparent:true, alphaTest:0.5,
+      depthWrite:false, side: THREE.DoubleSide,
+    });
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1), this.mat);
+    this.mesh.renderOrder = 2;
+    this.currentName = null; this.frame = 0; this.timer = 0;
+    this.fps = 8; this.loop = true;
+    this.pixelScale = 0.012;   // meters per source pixel (~1.9m per 160px char)
+    this.feetX = 0; this.feetY = 0; this.feetZ = 0;
+    this.currentFrame = null;
+    const first = Object.values(animations)[0];
+    if (first && first[0]) this._setFrameTexture(first[0]);
+  }
+  setPixelScale(s){ this.pixelScale = s; if (this.currentFrame) this._applyFrame(this.currentFrame); }
+  setFeet(x, y, z){ this.feetX=x; this.feetY=y; this.feetZ=z; if (this.currentFrame) this._applyFrame(this.currentFrame); }
+  _applyFrame(f){
+    this.currentFrame = f;
+    this.mat.map = f.texture; this.mat.needsUpdate = true;
+    const w = f.w * this.pixelScale;
+    const h = f.h * this.pixelScale;
+    this.mesh.scale.set(w, h, 1);
+    // bottom-center of the plane should sit at (feetX, feetY, feetZ).
+    // Plane geometry's center is at origin, so we lift it by h/2.
+    this.mesh.position.set(this.feetX, this.feetY + h/2, this.feetZ);
+  }
+  _setFrameTexture(f){ this._applyFrame(f); }
+  play(name, fps=8, loop=true){
+    if (!this.animations[name] || !this.animations[name].length) return;
+    this.currentName = name; this.fps = fps; this.loop = loop;
+    this.frame = 0; this.timer = 0;
+    this._applyFrame(this.animations[name][0]);
+  }
+  update(dt){
+    // Y-axis billboard toward camera (keep feet on ground; rotate around vertical only)
+    const p = this.mesh.position;
+    this.mesh.lookAt(camera.position.x, p.y, camera.position.z);
+    if (!this.currentName) return;
+    this.timer += dt;
+    const spf = 1/this.fps;
+    const frames = this.animations[this.currentName];
+    while (this.timer >= spf){
+      this.timer -= spf;
+      this.frame++;
+      if (this.frame >= frames.length){
+        if (this.loop) this.frame = 0;
+        else { this.frame = frames.length - 1; break; }
+      }
+    }
+    this._applyFrame(frames[this.frame]);
+  }
+}
+
+// ============== particles / effects ===============
+class Particle {
+  constructor(position, velocity, color, life, size=0.2){
+    this.mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(size, 6, 6),
+      new THREE.MeshBasicMaterial({ color, transparent:true, opacity:1 })
+    );
+    this.mesh.position.copy(position);
+    this.v = velocity.clone();
+    this.life = life; this.age = 0;
+    scene.add(this.mesh);
+  }
+  update(dt){
+    this.age += dt;
+    this.v.y -= 9.8*dt*0.4;
+    this.mesh.position.addScaledVector(this.v, dt);
+    this.mesh.material.opacity = 1 - this.age/this.life;
+    if (this.age >= this.life){ scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); return true; }
+    return false;
+  }
+}
+const particles = [];
+function burst(pos, color, n=24, speed=8, life=0.8, size=0.2){
+  for (let i=0;i<n;i++){
+    const v = new THREE.Vector3(
+      (Math.random()-.5)*2, Math.random()*1.6, (Math.random()-.5)*2
+    ).normalize().multiplyScalar(speed*(0.4+Math.random()*0.9));
+    particles.push(new Particle(pos, v, color, life*(0.6+Math.random()*0.8), size*(0.6+Math.random()*0.8)));
+  }
+}
+
+// Ball trail via small emitters
+class Trail {
+  constructor(color){
+    this.color = color;
+    this.points = [];
+    this.maxLen = 60;
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.maxLen*3), 3));
+    this.line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color, transparent:true, opacity:.9 }));
+    scene.add(this.line);
+  }
+  push(p){
+    this.points.push(p.clone());
+    if (this.points.length > this.maxLen) this.points.shift();
+    const arr = this.line.geometry.attributes.position.array;
+    for (let i=0;i<this.maxLen;i++){
+      const pt = this.points[i] || this.points[0] || new THREE.Vector3();
+      arr[i*3]=pt.x; arr[i*3+1]=pt.y; arr[i*3+2]=pt.z;
+    }
+    this.line.geometry.attributes.position.needsUpdate = true;
+  }
+  clear(){ this.points.length = 0; this.push(new THREE.Vector3(0,-9999,0)); }
+  dispose(){ scene.remove(this.line); this.line.geometry.dispose(); this.line.material.dispose(); }
+}
+
+// ============== game state ===============
+const state = {
+  phase: 'title',       // title, idle, windup, pitch, hit, result
+  score: 0, combo: 0,
+  strikes: 0, balls: 0, outs: 0,
+  charging: false, power: 0,
+  swingWindowOpen: false, swingTimer: 0, SWING_WINDOW: 0.28,
+  timeScale: 1, flash: 0,
+  aim: 0, // -1..+1, shifts contact zone/ball-flight direction
+  pitchType: 'FAST',
+};
+
+// UI helpers
+const ui = {
+  score: document.getElementById('scoreVal'),
+  combo: document.getElementById('comboVal'),
+  pitch: document.getElementById('pitchVal'),
+  strDots: document.getElementById('strDots'),
+  balDots: document.getElementById('balDots'),
+  outDots: document.getElementById('outDots'),
+  meterFill: document.getElementById('meterFill'),
+  meterLabel: document.getElementById('meterLabel'),
+  timingWrap: document.getElementById('timingWrap'),
+  timingBar:  document.getElementById('timingBar'),
+  popups: document.getElementById('popups'),
+  marker: document.getElementById('ballMarker'),
+  flash:  document.getElementById('flash'),
+  hint:   document.getElementById('hint'),
+  title:  document.getElementById('title'),
+  startBtn: document.getElementById('startBtn'),
+};
+function renderDots(container, count, total, klass){
+  let html = '';
+  for (let i=0;i<total;i++) html += `<span class="dot ${i<count?'on ':''}${klass}"></span>`;
+  container.innerHTML = html;
+}
+function updateHUD(){
+  ui.score.textContent = state.score;
+  ui.combo.textContent = 'x' + Math.max(1, state.combo);
+  ui.pitch.textContent = state.pitchType;
+  renderDots(ui.strDots, state.strikes, 3, 'strike');
+  renderDots(ui.balDots, state.balls,   4, 'ball');
+  renderDots(ui.outDots, state.outs,    3, 'strike');
+  ui.meterFill.style.width = (state.power*100)+'%';
+}
+function popup(text, color='pcolor-gold', size=96, x=50, y=40){
+  const el = document.createElement('div');
+  el.className = 'popup ' + color;
+  el.textContent = text;
+  el.style.left = x+'%'; el.style.top = y+'%';
+  el.style.transform = 'translate(-50%,-50%)';
+  el.style.fontSize = size+'px';
+  ui.popups.appendChild(el);
+  setTimeout(()=>el.remove(), 1200);
+}
+function flash(intensity=0.6, ms=120){
+  ui.flash.style.opacity = intensity;
+  setTimeout(()=> ui.flash.style.opacity = 0, ms);
+}
+
+// ============== actors ===============
+let batter, pitcher, catcher;
+let sprites = [];
+let ballSpriteTex;  // texture of ball sprite, used as Sprite for the ball
+let ballMesh;       // three.js sprite for the ball
+const ballState = {
+  pos: new THREE.Vector3(0, 2.5, 18.44),
+  vel: new THREE.Vector3(),
+  active: false,
+  phase: 'idle',    // pitched | hit | dead
+  trail: null,
+  element: 'fast',
+};
+
+async function buildActors(){
+  // Prefer manual slices from the editor; fall back to auto strips otherwise.
+  const batsmanSlices = await tryLoadSlices('./slices/batsman.json');
+  const batAnimsP = batsmanSlices
+    ? sliceFromJson(batsmanSlices.batsman)
+    : sliceSheet(SHEETS.batsman, BATSMAN);
+
+  const [batAnims, pitAnims, catAnims, ballFrame] = await Promise.all([
+    batAnimsP,
+    sliceSheet(SHEETS.pitcher, PITCHER),
+    sliceSheet(SHEETS.catcher, CATCHER),
+    sliceSheet(SHEETS.ball,    { ball: strip(BALL_FRAME.x, BALL_FRAME.y, BALL_FRAME.w, BALL_FRAME.h, 1) }),
+  ]);
+  console.log('batter animations loaded:', Object.keys(batAnims).join(', '));
+
+  // Pixel scale: ~190px tall character → ~1.85m world height.
+  const PX = 0.0098;
+
+  batter = new SpriteBillboard(batAnims);
+  batter.setPixelScale(PX);
+  batter.setFeet(1.4, 0, 0.2);     // right-handed batter's box, feet on ground
+  batter.play('idle', 6, true);
+  scene.add(batter.mesh);
+  sprites.push(batter);
+
+  pitcher = new SpriteBillboard(pitAnims);
+  pitcher.setPixelScale(PX);
+  pitcher.setFeet(0, 0.3, 18.44);  // on top of the mound
+  pitcher.play('idle', 4, true);
+  scene.add(pitcher.mesh);
+  sprites.push(pitcher);
+
+  catcher = new SpriteBillboard(catAnims);
+  catcher.setPixelScale(PX * 0.8); // crouched, render slightly smaller
+  catcher.setFeet(-0.4, 0, -2.6);  // behind home plate, offset so batter is visible
+  catcher.play('idle', 3, true);
+  scene.add(catcher.mesh);
+  sprites.push(catcher);
+
+  // Ball: use the spliced first frame as a billboard sprite
+  const bf = ballFrame.ball[0];
+  const ballMat = new THREE.SpriteMaterial({ map: bf.texture, transparent:true, depthTest:true });
+  ballMesh = new THREE.Sprite(ballMat);
+  ballMesh.scale.set(0.45, 0.45, 0.45);
+  ballMesh.position.copy(ballState.pos);
+  scene.add(ballMesh);
+}
+
+// ============== game loop / logic ===============
+
+const PITCHES = [
+  { name:'FAST',      color: 0xff7733, element:'fire',    speed: 34, curve: 0 },
+  { name:'CURVE',     color: 0x44ddff, element:'ice',     speed: 26, curve: 3.2 },
+  { name:'LIGHTNING', color: 0xffe04a, element:'electric',speed: 40, curve: 0, zigzag:true },
+  { name:'SHADOW',    color: 0x9b4bff, element:'shadow',  speed: 28, curve: 1.4, phaseHide:true },
+  { name:'CHANGE',    color: 0x58ff8a, element:'wind',    speed: 19, curve: 0.6 },
+];
+
+function pickPitch(){
+  // Bias by round: make harder as combo grows
+  const tier = Math.min(4, Math.floor(state.combo/3));
+  const pool = PITCHES.slice(0, 2 + tier);
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
+let pitchInfo = null;
+let pitchT = 0;
+let pitchEndT = 0;
+
+function startPitchSequence(){
+  if (state.outs >= 3){ return gameOver(); }
+  state.phase = 'windup';
+  state.power = 0; state.charging = false;
+  state.swingWindowOpen = false; state.swingTimer = 0;
+
+  // Reset everyone to their idle loop so we never start a new pitch with a
+  // stale last-frame from the previous swing/hit/follow-through.
+  if (batter)  batter.play('idle', 6, true);
+  if (catcher) catcher.play('idle', 3, true);
+  pitcher.play('idle', 4, true);
+
+  pitchInfo = pickPitch();
+  state.pitchType = pitchInfo.name;
+  updateHUD();
+
+  setTimeout(()=>{
+    if (state.phase !== 'windup') return;
+    pitcher.play('windup', 5, false);
+    setTimeout(()=>{
+      if (state.phase !== 'windup') return;
+      pitcher.play('pitch', 10, false);
+      setTimeout(launchPitch, 380);
+    }, 500);
+  }, 350);
+}
+
+function launchPitch(){
+  state.phase = 'pitch';
+  const p = pitchInfo;
+  ballState.element = p.element;
+  ballState.color   = p.color;
+  if (ballState.trail) ballState.trail.dispose();
+  ballState.trail = new Trail(p.color);
+  ballState.active = true;
+  ballState.phase  = 'pitched';
+  // release point: from pitcher's hand approx
+  ballState.pos.set(0.4, 2.3, 18.0);
+  // target: strike zone around (aim*0.6, 1.2, 0.2) from home plate
+  const tx = state.aim*0.6 + (Math.random()-0.5)*0.6;
+  const ty = 1.1 + (Math.random()-0.5)*0.4;
+  const tz = 0.0;
+  const dir = new THREE.Vector3(tx,ty,tz).sub(ballState.pos).normalize();
+  ballState.vel.copy(dir.multiplyScalar(p.speed));
+  ballState.targetZone = { x:tx, y:ty };
+  ballState.curve = p.curve;
+  ballState.zigzag = !!p.zigzag;
+  ballState.phaseHide = !!p.phaseHide;
+  ballState.tSincePitch = 0;
+  pitcher.play('follow', 6, false);
+  // open swing window when ball is ~halfway to plate
+  pitchEndT = performance.now() + 1200;
+}
+
+function onSwing(){
+  if (state.phase !== 'pitch' || !ballState.active){
+    // Swinging at nothing while charging is fine - treat as wasted charge
+    state.power = 0; updateHUD(); return;
+  }
+  batter.play('swing', 24, false);
+  // Determine timing quality based on ball distance to plate along z axis
+  // z==0 is plate. 'perfect' when ball is close to contact point ~ z in [-0.5, 0.8]
+  const z = ballState.pos.z;
+  let quality;
+  if (z > 3.5) quality = 'early';
+  else if (z < -1.2) quality = 'late';
+  else if (Math.abs(z-0.2) < 0.45) quality = 'perfect';
+  else if (Math.abs(z-0.2) < 1.3)  quality = 'good';
+  else quality = 'weak';
+
+  // Aim match: if ball x is within ~1.1 of aim zone, contact succeeds
+  const ax = state.aim*0.6;
+  const dx = Math.abs(ballState.pos.x - ax);
+  const contactable = z < 5 && z > -2 && dx < 1.5 && Math.abs(ballState.pos.y-1.3) < 1.1;
+
+  if (!contactable){
+    // whiff
+    state.strikes++;
+    popup('STRIKE!', 'pcolor-red', 110);
+    state.combo = 0;
+    afterContactMiss();
+    return;
+  }
+  doHit(quality);
+}
+
+function afterContactMiss(){
+  updateHUD();
+  cleanupBall();
+  if (state.strikes >= 3){
+    state.outs++;
+    state.strikes = 0; state.balls = 0;
+    popup('OUT!', 'pcolor-red', 140);
+    flash(0.5, 180);
+  }
+  updateHUD();
+  setTimeout(()=> state.outs >= 3 ? gameOver() : startPitchSequence(), 900);
+}
+
+function doHit(quality){
+  // Power determines exit velocity; quality gives multiplier + arc
+  const powerMul = 0.4 + state.power*1.6;  // 0.4 - 2.0
+  const qualityMul = quality==='perfect'?1.8 : quality==='good'?1.0 : 0.55;
+  const vMag = 30 * powerMul * qualityMul;
+  // launch angle
+  const ang = (quality==='perfect') ? (Math.PI/180)*(28 + Math.random()*10) :
+              (quality==='good')    ? (Math.PI/180)*(18 + Math.random()*18) :
+                                       (Math.PI/180)*(8 + Math.random()*10);
+  // direction: aim-based field spread
+  const spread = state.aim * (Math.PI/180) * 45 + (Math.random()-0.5)*(Math.PI/180)*30;
+  const dir = new THREE.Vector3(Math.sin(spread), Math.sin(ang), Math.cos(spread)*-1);
+  // flip Z: we want ball going away from home (positive Z) toward outfield.
+  // Home at z=0, outfield at +z. So invert the earlier z component:
+  dir.z = Math.cos(spread); // positive = outfield
+  dir.normalize();
+  ballState.vel.copy(dir.multiplyScalar(vMag));
+  ballState.vel.y = Math.abs(vMag * Math.sin(ang));
+  ballState.phase = 'hit';
+  ballState.active = true;
+
+  // Visual punch
+  if (quality==='perfect'){
+    state.timeScale = 0.22;
+    setTimeout(()=> state.timeScale = 1.0, 700);
+    flash(0.85, 140);
+    popup('PERFECT HIT!', 'pcolor-gold', 140);
+    burst(ballState.pos, 0xfff0a0, 50, 14, 0.9, 0.28);
+    burst(ballState.pos, 0xffa040, 30, 10, 1.0, 0.22);
+  } else if (quality==='good'){
+    flash(0.35, 90);
+    popup('NICE HIT!', 'pcolor-green', 90);
+    burst(ballState.pos, 0xffd070, 26, 9, 0.7, 0.22);
+  } else {
+    popup('CONTACT', 'pcolor-blue', 64);
+    burst(ballState.pos, 0xaabbcc, 12, 6, 0.5, 0.15);
+  }
+  batter.play('hit', 12, false);
+
+  // combo
+  state.combo++;
+  if (state.combo >= 3) popup(state.combo+' STREAK!', 'pcolor-purple', 70, 50, 58);
+
+  // Score + outcome judged later when ball lands
+  state.hitQuality = quality;
+}
+
+function cleanupBall(){
+  ballState.active = false;
+  if (ballState.trail){ ballState.trail.dispose(); ballState.trail = null; }
+  ballMesh.position.set(0, -999, 0);
+}
+
+function resolveHitLanding(){
+  // Check horizontal distance from home plate
+  const dx = ballState.pos.x, dz = ballState.pos.z;
+  const dist = Math.sqrt(dx*dx + dz*dz);
+  const fair = (dz > 0) && (Math.abs(dx) < dz*1.05); // rough fair cone
+  if (!fair){
+    popup('FOUL!', 'pcolor-blue', 80);
+    state.strikes = Math.min(2, state.strikes+1);
+    state.combo = Math.max(0, state.combo-1);
+    afterContactMiss();
+    return;
+  }
+  let points = 0;
+  if (dist > 118){
+    // HOME RUN
+    points = 1000 * (1 + Math.floor(state.combo/2)*0.5);
+    popup('HOME RUN!', 'pcolor-gold', 180, 50, 38);
+    flash(0.9, 220);
+    burst(new THREE.Vector3(dx, 3, dz), 0xffdd40, 60, 18, 1.2, 0.35);
+    burst(new THREE.Vector3(dx, 3, dz), 0xff7a20, 40, 12, 1.0, 0.28);
+    // crowd cheer: tiny camera shake
+    cameraShake(0.7, 700);
+  } else if (dist > 85){
+    points = 400; popup('TRIPLE!', 'pcolor-gold', 110);
+  } else if (dist > 55){
+    points = 250; popup('DOUBLE!', 'pcolor-green', 100);
+  } else if (dist > 25){
+    points = 120; popup('SINGLE!', 'pcolor-green', 80);
+  } else {
+    points = 40; popup('GROUND OUT', 'pcolor-red', 70);
+    state.outs++;
+    state.combo = 0;
+  }
+  state.score += Math.round(points * (1 + state.combo*0.1));
+  state.strikes = 0; state.balls = 0;
+  updateHUD();
+  cleanupBall();
+  setTimeout(()=> state.outs >= 3 ? gameOver() : startPitchSequence(), 1700);
+}
+
+let shakeAmp = 0, shakeUntil = 0;
+function cameraShake(amp, ms){ shakeAmp = amp; shakeUntil = performance.now()+ms; }
+
+function gameOver(){
+  state.phase = 'over';
+  popup('GAME OVER', 'pcolor-red', 160, 50, 40);
+  setTimeout(()=>{
+    popup('FINAL · '+state.score, 'pcolor-gold', 90, 50, 56);
+  }, 900);
+  setTimeout(()=>{
+    // Reset and return to title
+    state.score=0; state.combo=0; state.strikes=0; state.balls=0; state.outs=0;
+    updateHUD();
+    ui.title.style.display = 'flex';
+  }, 3800);
+}
+
+// ============== input ==============
+const keys = {};
+window.addEventListener('keydown', (e)=>{
+  if (e.repeat) return;
+  keys[e.code] = true;
+  if (state.phase === 'title') return;
+
+  if (e.code === 'Space'){
+    state.charging = true;
+  }
+  if (e.code === 'KeyA') state.aim = Math.max(-1, state.aim - 0.5);
+  if (e.code === 'KeyD') state.aim = Math.min( 1, state.aim + 0.5);
+  if (e.code === 'KeyS'){ batter.play('ready', 8, false); }
+  if (e.code === 'KeyW'){ batter.mesh.position.y = 1.8; setTimeout(()=> batter.mesh.position.y = 0.95, 350); }
+});
+window.addEventListener('keyup', (e)=>{
+  keys[e.code] = false;
+  if (state.phase === 'title') return;
+  if (e.code === 'Space'){
+    if (state.charging){
+      state.charging = false;
+      onSwing();
+      // decay power
+      setTimeout(()=>{ state.power = 0; updateHUD(); }, 120);
+    }
+  }
+});
+
+ui.startBtn.addEventListener('click', async ()=>{
+  ui.title.style.display = 'none';
+  if (!batter){ await buildActors(); }
+  state.phase = 'idle';
+  updateHUD();
+  setTimeout(startPitchSequence, 600);
+});
+
+// ============== main animation loop ==============
+let last = performance.now();
+function loop(now){
+  const rawDt = Math.min(0.05, (now - last)/1000);
+  last = now;
+  const dt = rawDt * state.timeScale;
+
+  // Charge power (held SPACE)
+  if (state.charging){
+    state.power = Math.min(1, state.power + dt * 0.9);
+    updateHUD();
+  }
+
+  // Update ball
+  if (ballState.active){
+    if (ballState.phase === 'pitched'){
+      ballState.tSincePitch += dt;
+      // curve/zigzag
+      ballState.vel.y -= 9.8*dt*0.15; // slight gravity on pitch
+      if (ballState.curve){
+        ballState.vel.x += Math.sin(ballState.tSincePitch*5)*ballState.curve*dt;
+      }
+      if (ballState.zigzag){
+        ballState.pos.x += Math.sin(ballState.tSincePitch*22)*0.08;
+      }
+      if (ballState.phaseHide){
+        ballMesh.material.opacity = (Math.sin(ballState.tSincePitch*14) > 0) ? 1 : 0.25;
+      } else {
+        ballMesh.material.opacity = 1;
+      }
+      ballState.pos.addScaledVector(ballState.vel, dt);
+      if (ballState.trail) ballState.trail.push(ballState.pos);
+      // past the batter w/o swing → ball/strike called
+      if (ballState.pos.z < -1.6){
+        // In strike zone?
+        const sx = Math.abs(ballState.pos.x) < 0.7;
+        const sy = ballState.pos.y > 0.8 && ballState.pos.y < 2.0;
+        const strike = sx && sy;
+        if (strike){
+          state.strikes++;
+          popup('STRIKE LOOKING', 'pcolor-red', 80);
+          state.combo = 0;
+        } else {
+          state.balls++;
+          popup('BALL', 'pcolor-blue', 70);
+          if (state.balls >= 4){
+            popup('WALK!', 'pcolor-green', 100);
+            state.balls = 0; state.strikes = 0;
+            state.score += 50;
+          }
+        }
+        updateHUD();
+        cleanupBall();
+        setTimeout(()=> state.outs >= 3 ? gameOver() : startPitchSequence(), 900);
+      }
+    } else if (ballState.phase === 'hit'){
+      ballState.vel.y -= 9.8*dt;
+      ballState.vel.multiplyScalar(1 - 0.06*dt); // mild air drag
+      ballState.pos.addScaledVector(ballState.vel, dt);
+      if (ballState.trail) ballState.trail.push(ballState.pos);
+      if (ballState.pos.y <= 0.1){
+        ballState.pos.y = 0.1;
+        // Landing spark
+        burst(ballState.pos, 0xdcc080, 18, 6, 0.6, 0.15);
+        resolveHitLanding();
+      }
+    }
+    ballMesh.position.copy(ballState.pos);
+
+    // Update on-screen ball marker (2D overlay indicating ball screen pos)
+    if (ballState.phase === 'pitched'){
+      const v = ballState.pos.clone().project(camera);
+      const sx = (v.x*0.5+0.5)*window.innerWidth;
+      const sy = (-v.y*0.5+0.5)*window.innerHeight;
+      ui.marker.style.display = 'block';
+      ui.marker.style.left = sx+'px';
+      ui.marker.style.top  = sy+'px';
+      const col = '#' + ballState.color.toString(16).padStart(6,'0');
+      ui.marker.style.borderColor = col;
+      ui.marker.style.boxShadow = `0 0 14px ${col}, 0 0 6px ${col} inset`;
+    } else {
+      ui.marker.style.display = 'none';
+    }
+  } else {
+    ui.marker.style.display = 'none';
+  }
+
+  // Update sprites (animation + billboard)
+  for (const s of sprites) s.update(dt);
+
+  // Update particles
+  for (let i = particles.length-1; i>=0; i--){
+    if (particles[i].update(dt)) particles.splice(i,1);
+  }
+
+  // Camera shake
+  if (performance.now() < shakeUntil){
+    camera.position.x = (Math.random()-0.5)*shakeAmp;
+    camera.position.y = 3.6 + (Math.random()-0.5)*shakeAmp*0.6;
+  } else {
+    camera.position.x = 0;
+    camera.position.y = 3.6;
+  }
+
+  // subtle camera follow on hit
+  if (ballState.phase === 'hit' && ballState.active){
+    const t = Math.min(1, ballState.pos.z / 100);
+    const look = new THREE.Vector3(
+      ballState.pos.x*0.1, 2.6 + t*4, 18 + t*30
+    );
+    camera.lookAt(look);
+  } else {
+    camera.lookAt(0, 2.6, 18);
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// Pre-load sprites eagerly so Play Ball is instant
+buildActors().catch(err => console.error('sprite load failed', err));
+
+</script>
+</body>
+</html>

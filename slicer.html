@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DIAMOND STORM — Sprite Slicer Viewer</title>
+<style>
+  * { box-sizing:border-box; }
+  html, body { margin:0; padding:0; background:#0a1220; color:#e7eefc;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  header { position:sticky; top:0; z-index:10; padding: 14px 22px;
+    background: linear-gradient(180deg, #0a1220 0%, rgba(10,18,32,.9) 100%);
+    border-bottom: 1px solid #1e2c48; display:flex; align-items:center; gap:18px; }
+  header h1 { font-size: 18px; letter-spacing: 3px; margin:0; color:#8ecfff; font-weight:600; }
+  header .status { font-size: 13px; color:#7fa4cf; }
+  .sheet { padding: 26px 22px; border-bottom: 1px solid #142035; }
+  .sheet h2 { margin: 0 0 4px 0; font-size: 22px; color:#ffd24a; letter-spacing:1px; }
+  .sheet .path { color:#6783a8; font-size:12px; margin-bottom: 18px; font-family: ui-monospace, monospace; }
+  .anim { margin: 18px 0; }
+  .anim h3 { margin: 0 0 10px 0; font-size: 14px; letter-spacing:2px; color:#a9d2ff; font-weight:600; }
+  .frames { display:flex; flex-wrap:wrap; gap: 10px; align-items:flex-end; }
+  .frame { background: repeating-conic-gradient(#1a2438 0 25%, #141b2c 0 50%) 0 0 / 16px 16px;
+    border: 1px solid #253654; border-radius:6px; padding:4px; text-align:center; }
+  .frame canvas { display:block; image-rendering: pixelated; }
+  .frame .idx { font-size: 10px; color:#7aa0c8; margin-top:4px; letter-spacing:1px; }
+  .err { color:#ff6a6a; font-family: ui-monospace, monospace; padding:16px; background:#2a0e14; border-radius:8px; }
+  .legend { display:flex; gap:16px; color:#8aa7c8; font-size:12px; }
+  .legend span { padding:2px 8px; background:#142035; border-radius:10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧩 SPRITE SLICER VIEWER</h1>
+  <span class="status" id="status">loading…</span>
+  <div class="legend">
+    <span>navy background keyed to alpha</span>
+    <span>frame auto-trimmed to bbox</span>
+    <span>image-rendering: pixelated</span>
+  </div>
+</header>
+<div id="root"></div>
+
+<script>
+// ============================================================
+// Same slicer logic as the game, but renders each frame to the page.
+// ============================================================
+const SHEETS = {
+  batsman:  './spritsheets/Batsman.png',
+  pitcher:  './spritsheets/Pitching.png',
+  catcher:  './spritsheets/Catching.png',
+  fielder:  './spritsheets/Fielders.png',
+  running:  './spritsheets/Running.png',
+  special:  './spritsheets/Special.png',
+  ball:     './spritsheets/ball physics.png',
+  ui:       './spritsheets/UI.png',
+};
+
+function strip(x,y,w,h,cols){ return {x,y,w,h,cols}; }
+
+// Sprite regions (cols = number of frames in that strip)
+const STRIPS = {
+  batsman: {
+    idle:      strip(  8,  60, 512, 200, 4),
+    pre_swing: strip(536, 60, 512, 200, 4),
+    swing:     strip(  8, 320, 768, 200, 6),
+    hit:       strip(776, 320, 256, 200, 2),
+    miss:      strip(1040,320, 256, 200, 2),
+    jump:      strip(  8, 584, 384, 200, 3),
+    duck:      strip(392, 584, 384, 200, 3),
+    strikeout: strip(776, 584, 384, 200, 3),
+    ready:     strip(1152,584, 384, 200, 3),
+  },
+  pitcher: {
+    idle:      strip(  8,  60, 384, 200, 3),
+    set:       strip(392, 60, 384, 200, 3),
+    windup:    strip(776, 60, 512, 200, 4),
+    leg_lift:  strip(1296,60, 240, 200, 2),
+    pitch:     strip(  8, 320, 768, 200, 6),
+    follow:    strip(  8, 584, 512, 200, 4),
+    ready:     strip(520, 584, 384, 200, 3),
+    fielding:  strip(904, 584, 384, 200, 3),
+    pickoff:   strip(  8, 848, 512, 180, 4),
+    celebrate: strip(1024, 848, 512, 180, 4),
+  },
+  catcher: {
+    idle:      strip(  8,  60, 256, 200, 2),
+    receive_n: strip(272, 60, 640, 200, 5),
+    block:     strip(  8, 320, 640, 200, 5),
+    receive_l: strip(656, 320, 640, 200, 5),
+    throwback: strip(  8, 584, 512, 200, 4),
+    popup:     strip(528, 584, 384, 200, 3),
+    pop_drop:  strip(  8, 820, 384, 200, 3),
+    framing:   strip(520, 820, 512, 200, 4),
+    signal:    strip(1040,820, 256, 200, 2),
+    ready:     strip(1304, 820, 232, 200, 2),
+  },
+  fielder: {
+    idle:     strip(  8,  60, 384, 200, 3),
+    run:      strip(392, 60, 512, 200, 4),
+    ready:    strip(904, 60, 384, 200, 3),
+    track:    strip(  8, 320, 384, 200, 3),
+    backpedal:strip(392, 320, 384, 200, 3),
+    jump:     strip(776, 320, 384, 200, 3),
+    run_catch:strip(  8, 584, 512, 200, 4),
+    dive:     strip(528, 584, 512, 200, 4),
+    throw:    strip(  8, 820, 384, 200, 3),
+    throw_run:strip(392, 820, 512, 200, 4),
+    field_gb: strip(1040, 820, 384, 200, 3),
+  },
+  running: {
+    idle:      strip(  8,  60, 256, 200, 2),
+    run_1b:    strip(264, 60, 512, 200, 4),
+    run_23b:   strip(784, 60, 640, 200, 5),
+    accel:     strip(  8, 320, 512, 200, 4),
+    slow:      strip(528, 320, 384, 200, 3),
+    stop:      strip(920, 320, 384, 200, 3),
+    slide_feet:strip(  8, 584, 512, 200, 4),
+    slide_head:strip(528, 584, 512, 200, 4),
+    dive_back: strip(1048, 584, 384, 200, 3),
+    steal_run: strip(  8, 820, 384, 200, 3),
+    safe:      strip(920, 820, 384, 200, 3),
+    celebrate: strip(1296, 820, 240, 200, 2),
+  },
+  special: {
+    // Approximate — Special.png has varied block sizes per row
+    power_swing:   strip(  8, 80, 768, 180, 5),
+    curve_slow:    strip(776, 80, 256, 180, 2),
+    curve_normal:  strip(1040,80, 256, 180, 2),
+    curve_power:   strip(1296,80, 240, 180, 2),
+    slowmo:        strip(  8, 280, 640, 180, 4),
+    perfect_hit:   strip(660, 280, 880, 180, 5),
+    fireball:      strip(  8, 470, 384, 160, 2),
+    iceball:       strip(392, 470, 384, 160, 2),
+    lightning:     strip(776, 470, 384, 160, 2),
+    shadow:        strip(1160, 470, 380, 160, 2),
+  },
+  ball: {
+    spin_4frame:   strip(  8, 70, 480, 80, 4),
+    spin_8frame:   strip(544, 70, 768, 80, 8),
+    spin_12frame:  strip(  8, 150, 1200, 80, 12),
+    fast_trail:    strip(  8, 250, 880, 80, 5),
+    slow_trail:    strip(900, 250, 620, 80, 4),
+    power_hit:     strip(  8, 360, 880, 80, 5),
+    perfect_hit:   strip(900, 360, 620, 80, 4),
+    bounce:        strip(  8, 460, 1200, 80, 7),
+    wall_bounce:   strip(  8, 560, 520, 90, 3),
+    fence:         strip(540, 560, 360, 90, 2),
+    skid:          strip(920, 560, 600, 90, 3),
+  },
+  ui: {
+    // UI is tricky — single-frame pop graphics of varied size. Rough rows.
+    popup_row1:    strip(  8,  70, 1400, 80, 7),
+    popup_row2:    strip(  8, 155, 1400, 80, 7),
+    popup_row3:    strip(  8, 240, 1400, 80, 7),
+    combo:         strip(  8, 340, 1080, 90, 6),
+    power_meter:   strip(  8, 470, 880, 70, 5),
+    events:        strip(  8, 700, 1520, 120, 10),
+  },
+};
+
+function loadImage(src){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=>resolve(img);
+    img.onerror = ()=>reject(new Error('failed: '+src));
+    img.src = src;
+  });
+}
+
+/**
+ * Auto-detect every sprite inside a strip rect by scanning for vertical
+ * runs of bg-only columns. Returns an ordered (left-to-right) array of
+ * tightly-cropped HTMLCanvasElement frames.
+ *
+ * Why this works: characters on these sheets are separated by visible
+ * navy bg padding. Once we color-key bg → alpha 0, a "column with zero
+ * non-bg pixels" is a gap between sprites. Runs of content columns are
+ * sprites; runs of empty columns are gaps. We split on gaps of >= MIN_GAP
+ * empty columns. This is grid-free and tolerates uneven sprite widths.
+ */
+function autoExtractFrames(sctx, rx, ry, rw, rh, isBg){
+  const data = sctx.getImageData(rx, ry, rw, rh);
+  const d = data.data;
+  const W = data.width, H = data.height;
+
+  // 1. Key bg, build column fg-count.
+  const colFg = new Int32Array(W);
+  for (let y=0; y<H; y++){
+    for (let x=0; x<W; x++){
+      const i = (y*W+x)*4;
+      if (d[i+3] >= 5 && !isBg(d[i],d[i+1],d[i+2],d[i+3])){
+        colFg[x]++;
+      } else {
+        d[i+3] = 0;
+      }
+    }
+  }
+
+  // 2. Walk columns left→right grouping into sprite x-runs separated by
+  // gaps of >= MIN_GAP empty columns.
+  const MIN_COL_FG = 1;
+  const MIN_GAP = 4;
+  const xRuns = [];
+  let inRun = false, x0 = 0, gapLen = 0;
+  for (let x=0; x<W; x++){
+    if (colFg[x] >= MIN_COL_FG){
+      if (!inRun){ inRun = true; x0 = x; }
+      gapLen = 0;
+    } else if (inRun){
+      gapLen++;
+      if (gapLen >= MIN_GAP){
+        xRuns.push([x0, x - gapLen]);
+        inRun = false;
+      }
+    }
+  }
+  if (inRun) xRuns.push([x0, W-1]);
+
+  // 3. For each x-run, find its y-bounds and emit a cropped canvas.
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  tmp.getContext('2d').putImageData(data, 0, 0);
+
+  const frames = [];
+  for (const [sx0, sx1] of xRuns){
+    let yMin = H, yMax = -1;
+    for (let y=0; y<H; y++){
+      for (let x=sx0; x<=sx1; x++){
+        const i = (y*W+x)*4;
+        if (d[i+3] > 0){
+          if (y < yMin) yMin = y;
+          if (y > yMax) yMax = y;
+          break;
+        }
+      }
+    }
+    if (yMax < yMin) continue;
+    const tw = sx1 - sx0 + 1;
+    const th = yMax - yMin + 1;
+    // Filter labels/noise — real characters are tall.
+    if (th < 30 || tw < 16) continue;
+    const out = document.createElement('canvas');
+    out.width = tw; out.height = th;
+    out.getContext('2d').drawImage(tmp, sx0, yMin, tw, th, 0, 0, tw, th);
+    frames.push(out);
+  }
+
+  // Normalize each frame to the MAX width/height across the set,
+  // anchored at bottom-center. Keeps the character locked to a stable
+  // position across frames (no jittering when the game animates them).
+  if (frames.length === 0) return frames;
+  const maxW = Math.max(...frames.map(f => f.width));
+  const maxH = Math.max(...frames.map(f => f.height));
+  return frames.map(f => {
+    if (f.width === maxW && f.height === maxH) return f;
+    const c = document.createElement('canvas');
+    c.width = maxW; c.height = maxH;
+    const px = ((maxW - f.width) / 2) | 0;
+    const py = maxH - f.height;  // anchor at bottom
+    c.getContext('2d').drawImage(f, px, py);
+    return c;
+  });
+}
+
+// Legacy single-frame slicer (still used as a fallback path if needed).
+function sliceOneFrame(sctx, rx, ry, rw, rh, isBg){
+  const data = sctx.getImageData(rx, ry, rw, rh);
+  const d = data.data;
+  const W = data.width, H = data.height;
+
+  // 1) key bg & build fg mask
+  const fg = new Uint8Array(W*H);
+  for (let i=0, p=0; i<d.length; i+=4, p++){
+    if (d[i+3] < 5 || isBg(d[i], d[i+1], d[i+2], d[i+3])){
+      d[i+3] = 0;
+    } else {
+      fg[p] = 1;
+    }
+  }
+
+  // 2) dilate fg by DILATE pixels (8-connected). bridges 1–2px gaps.
+  const DILATE = 2;
+  let mask = fg;
+  for (let pass=0; pass<DILATE; pass++){
+    const next = new Uint8Array(W*H);
+    for (let y=0; y<H; y++){
+      for (let x=0; x<W; x++){
+        const i = y*W+x;
+        if (mask[i]){ next[i] = 1; continue; }
+        let hit = 0;
+        for (let dy=-1; dy<=1 && !hit; dy++){
+          for (let dx=-1; dx<=1 && !hit; dx++){
+            const nx=x+dx, ny=y+dy;
+            if (nx<0||ny<0||nx>=W||ny>=H) continue;
+            if (mask[ny*W+nx]) hit = 1;
+          }
+        }
+        if (hit) next[i] = 1;
+      }
+    }
+    mask = next;
+  }
+
+  // 3) find largest 8-connected component, with center bias
+  const visited = new Uint8Array(W*H);
+  const stack = new Int32Array(W*H*2);
+  const cx0 = W/2, cy0 = H/2;
+  let bestCells = null, bestBbox = null, bestScore = -Infinity;
+  for (let sy=0; sy<H; sy++){
+    for (let sx=0; sx<W; sx++){
+      const i0 = sy*W+sx;
+      if (visited[i0] || !mask[i0]) continue;
+      let sp=0; stack[sp++]=sx; stack[sp++]=sy;
+      let count=0, miX=sx, miY=sy, maX=sx, maY=sy;
+      const cells=[];
+      while (sp>0){
+        const cy=stack[--sp], cx=stack[--sp];
+        if (cx<0||cy<0||cx>=W||cy>=H) continue;
+        const k=cy*W+cx;
+        if (visited[k] || !mask[k]) continue;
+        visited[k]=1; count++; cells.push(k);
+        if (cx<miX) miX=cx; if (cy<miY) miY=cy;
+        if (cx>maX) maX=cx; if (cy>maY) maY=cy;
+        // 8-connected
+        stack[sp++]=cx+1; stack[sp++]=cy;
+        stack[sp++]=cx-1; stack[sp++]=cy;
+        stack[sp++]=cx;   stack[sp++]=cy+1;
+        stack[sp++]=cx;   stack[sp++]=cy-1;
+        stack[sp++]=cx+1; stack[sp++]=cy+1;
+        stack[sp++]=cx-1; stack[sp++]=cy+1;
+        stack[sp++]=cx+1; stack[sp++]=cy-1;
+        stack[sp++]=cx-1; stack[sp++]=cy-1;
+      }
+      const mx=(miX+maX)/2, my=(miY+maY)/2;
+      const score = count - Math.hypot(mx-cx0,my-cy0)*1.5;
+      if (score > bestScore){
+        bestScore = score; bestCells = cells;
+        bestBbox = { miX, miY, maX, maY };
+      }
+    }
+  }
+
+  if (!bestCells){
+    const c = document.createElement('canvas'); c.width=1; c.height=1; return c;
+  }
+
+  // 4) clear pixels not in winning CC, crop to bbox
+  const keep = new Uint8Array(W*H);
+  for (const k of bestCells) keep[k] = 1;
+  for (let k=0; k<W*H; k++) if (!keep[k]) d[k*4+3] = 0;
+
+  const { miX, miY, maX, maY } = bestBbox;
+  const tw = maX-miX+1, th = maY-miY+1;
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  tmp.getContext('2d').putImageData(data, 0, 0);
+  const out = document.createElement('canvas');
+  out.width = tw; out.height = th;
+  out.getContext('2d').drawImage(tmp, miX, miY, tw, th, 0, 0, tw, th);
+  return out;
+}
+
+function makeBgDetector(sctx, W, H){
+  // Sample many points at the extreme edges (where sprites never reach) and take
+  // the per-channel MEDIAN. That gives us the exact navy bg color of this sheet.
+  const pts = [[1,1],[W-2,1],[1,H-2],[W-2,H-2],
+               [W>>1,1],[W>>1,H-2],[1,H>>1],[W-2,H>>1]];
+  const rs=[], gs=[], bs=[];
+  for (const [x,y] of pts){
+    const p = sctx.getImageData(x,y,1,1).data;
+    rs.push(p[0]); gs.push(p[1]); bs.push(p[2]);
+  }
+  rs.sort((a,b)=>a-b); gs.sort((a,b)=>a-b); bs.sort((a,b)=>a-b);
+  const br = rs[rs.length>>1], bg = gs[gs.length>>1], bb = bs[bs.length>>1];
+  const TOL = 22;
+  return (r,g,b,a) => {
+    if (a !== undefined && a < 5) return true;
+    return Math.abs(r-br)<=TOL && Math.abs(g-bg)<=TOL && Math.abs(b-bb)<=TOL;
+  };
+}
+
+/** Slice a sheet, returning {animName: [HTMLCanvasElement,...]} */
+async function sliceSheet(url, strips){
+  const img = await loadImage(url);
+  const src = document.createElement('canvas');
+  src.width = img.width; src.height = img.height;
+  const sctx = src.getContext('2d', { willReadFrequently: true });
+  sctx.drawImage(img, 0, 0);
+
+  const isBg = makeBgDetector(sctx, img.width, img.height);
+
+  const out = {};
+  for (const [name, s] of Object.entries(strips)){
+    const rx = Math.max(0, Math.min(s.x, img.width-1));
+    const ry = Math.max(0, Math.min(s.y, img.height-1));
+    const rw = Math.max(1, Math.min(s.w, img.width - rx));
+    const rh = Math.max(1, Math.min(s.h, img.height - ry));
+    const frames = autoExtractFrames(sctx, rx, ry, rw, rh, isBg);
+    out[name] = frames;
+  }
+  return out;
+}
+
+async function run(){
+  const root = document.getElementById('root');
+  const status = document.getElementById('status');
+  let total = 0;
+  for (const [key, url] of Object.entries(SHEETS)){
+    const section = document.createElement('section');
+    section.className = 'sheet';
+    section.innerHTML = `<h2>${key.toUpperCase()}</h2><div class="path">${url}</div>`;
+    root.appendChild(section);
+
+    try {
+      const sliced = await sliceSheet(url, STRIPS[key] || {});
+      for (const [anim, frames] of Object.entries(sliced)){
+        const block = document.createElement('div');
+        block.className = 'anim';
+        block.innerHTML = `<h3>${anim} &middot; ${frames.length} frames</h3>`;
+        const row = document.createElement('div');
+        row.className = 'frames';
+        frames.forEach((c, i)=>{
+          total++;
+          const wrap = document.createElement('div');
+          wrap.className = 'frame';
+          // Scale small frames up for readability (cap max display height ~220px)
+          const displayH = Math.min(220, Math.max(c.height, 140));
+          const displayW = c.width * (displayH / c.height);
+          c.style.width = displayW+'px';
+          c.style.height = displayH+'px';
+          wrap.appendChild(c);
+          const idx = document.createElement('div');
+          idx.className = 'idx';
+          idx.textContent = `#${i} · ${c.width}×${c.height}`;
+          wrap.appendChild(idx);
+          row.appendChild(wrap);
+        });
+        block.appendChild(row);
+        section.appendChild(block);
+      }
+    } catch (e){
+      const err = document.createElement('div');
+      err.className = 'err';
+      err.textContent = 'ERROR: ' + e.message;
+      section.appendChild(err);
+    }
+    status.textContent = `${total} frames sliced so far…`;
+  }
+  status.textContent = `✅ done — ${total} frames sliced across ${Object.keys(SHEETS).length} sheets`;
+}
+run();
+</script>
+</body>
+</html>

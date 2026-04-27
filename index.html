@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>DIAMOND STORM — Arcade Baseball</title>
+<style>
+  html,body { margin:0; height:100%; background:#000; overflow:hidden;
+    font-family: monospace; color:#fff; user-select:none; }
+  #game { position:fixed; inset:0; }
+
+  /* Scoreboard — three sections like an old stadium board. The same styling
+     is shared by the regular #board (R/H/E + B/S/O + PITCH) and the derby
+     board (HR / SWINGS / LONGEST). Only one is visible at a time. */
+  #board, #board-derby {
+    position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    display:flex; gap: 0;
+    background: #0d1320; border: 2px solid #2a3a5a;
+    border-radius: 6px; box-shadow: 0 0 30px rgba(80,140,255,.18);
+    pointer-events:none;
+    font-family: 'Courier New', monospace;
+  }
+  #board-derby { display:none; }
+  #board > .section, #board-derby > .section { padding: 8px 14px; }
+  #board > .section + .section,
+  #board-derby > .section + .section { border-left: 1px solid #2a3a5a; }
+  #board .lbl, #board-derby .lbl { color:#7ea4d8; font-size:10px; letter-spacing:2px;
+    text-align:center; line-height:1; }
+  #board .num, #board-derby .num { color:#ffb733; font-size:24px; font-weight:bold;
+    text-shadow: 0 0 8px rgba(255,160,40,.5);
+    text-align:center; line-height:1; margin-top:4px; min-width:24px; }
+  /* Derby slots get a touch more emphasis since the whole board is just stats. */
+  #board-derby .num { font-size:30px; min-width:60px; }
+  #board-derby .num.featured { color:#ff7733;
+    text-shadow: 0 0 14px rgba(255,140,40,.7); }
+  /* Bonus phase makes the time slot pop. */
+  #board-derby.bonus #d-time {
+    color:#3ef07a;
+    text-shadow: 0 0 14px rgba(60,240,120,.7); }
+  #board-derby.bonus #d-time-label {
+    color:#3ef07a;
+    text-shadow: 0 0 8px rgba(60,240,120,.6); }
+  /* In bonus, the 40-pitch ceiling is no longer relevant — fade it. */
+  #board-derby.bonus #d-pitches-section { opacity:0.45; }
+  .rhe { display:flex; gap: 12px; align-items:center; }
+  .rhe .team { color:#bcd; font-size:13px; letter-spacing:2px;
+    border-right:1px solid #2a3a5a; padding-right:10px; }
+  .rhe .stat .num { font-size:22px; }
+  .count-row { display:flex; align-items:center; gap:6px;
+    font-size:11px; color:#7ea4d8; letter-spacing:2px; line-height:1.4; }
+  .count-row .lab { width:14px; text-align:right; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%;
+    border:1px solid #2a3a5a; background:#10182a; vertical-align:middle; }
+  .dot.on.s { background:#ff4a3d; border-color:#ff8a7d; box-shadow:0 0 6px #ff4a3d; }
+  .dot.on.b { background:#4afc7a; border-color:#8afdaa; box-shadow:0 0 6px #4afc7a; }
+  .dot.on.o { background:#ff4a3d; border-color:#ff8a7d; box-shadow:0 0 6px #ff4a3d; }
+  .pitch-box .num { color:#7ad8ff; font-size:14px;
+    text-shadow: 0 0 8px rgba(80,200,255,.5); }
+  #hint { position:fixed; bottom:8px; left:50%; transform:translateX(-50%);
+    font-size:12px; color:#9cf; opacity:.85; pointer-events:none; white-space:nowrap; }
+  #call { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    font-family: 'Impact','Arial Black',sans-serif; font-size:96px;
+    letter-spacing:4px; pointer-events:none;
+    -webkit-text-stroke:3px #000; opacity:0;
+    transition: opacity .15s; }
+  #timing { position:fixed; top:35%; left:50%; transform:translate(-50%,-50%);
+    font-family: 'Impact', sans-serif; font-size:42px; letter-spacing:6px;
+    pointer-events:none; opacity:0; -webkit-text-stroke:2px #000;
+    transition: opacity .12s; }
+  .floater { position:fixed; font-family:'Impact',sans-serif; font-size:64px;
+    -webkit-text-stroke:3px #000; pointer-events:none;
+    animation: floatUp 1.2s ease-out forwards; }
+  @keyframes floatUp {
+    0%   { transform: translate(-50%,0) scale(.6); opacity:0; }
+    20%  { transform: translate(-50%,-20px) scale(1.2); opacity:1; }
+    100% { transform: translate(-50%,-180px) scale(1); opacity:0; }
+  }
+  #flash { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none;
+    transition: opacity .12s; }
+
+  #meterLabel { position:fixed; bottom:98px; left:50%; transform:translateX(-50%);
+    font-family:'Impact','Arial Black',sans-serif;
+    font-size: 14px; letter-spacing:6px; color:#ffd24a;
+    text-shadow: 0 0 12px #ff7a00, 2px 2px 0 #000; pointer-events:none; }
+  #meterWrap { position:fixed; bottom:64px; left:50%; transform:translateX(-50%);
+    width: 380px; max-width: 70vw; height: 22px; background:rgba(0,0,0,.55);
+    border:2px solid rgba(120,200,255,.55); border-radius:18px; overflow:hidden;
+    box-shadow: 0 0 18px rgba(70,180,255,.4); pointer-events:none; }
+  #meterFill { height:100%; width:0%;
+    background: linear-gradient(90deg, #3ef07a 0%, #ffdb3a 55%, #ff4d2e 85%, #ff2ad6 100%);
+    transition: width .03s linear; box-shadow: 0 0 18px #ff8a3a inset; }
+
+  #aimWrap { position:fixed; bottom:34px; left:50%; transform:translateX(-50%);
+    display:flex; gap:6px; pointer-events:none; }
+  .aimTick { width:18px; height:6px; border-radius:3px; background:rgba(255,255,255,.18);
+    border:1px solid rgba(120,200,255,.4); }
+  .aimTick.on { background:#7ad8ff; box-shadow: 0 0 8px #7ad8ff; }
+
+  #ballMarker { position:fixed; width:42px; height:42px;
+    border:3px solid rgba(255,255,255,.65); border-radius:50%;
+    transform: translate(-50%,-50%);
+    box-shadow: 0 0 12px rgba(255,255,255,.5) inset, 0 0 8px rgba(255,255,255,.5);
+    display:none; mix-blend-mode: screen; pointer-events:none; }
+
+  #vignette { position:fixed; inset:0; pointer-events:none;
+    box-shadow: inset 0 0 240px 30px rgba(0,0,0,.75); }
+
+  /* Body classes set by JS to scope per-mode UI tweaks. */
+  body.mode-derby #board { display:none; }
+  body.mode-derby #board-derby { display:flex; }
+  body.mode-derby #modeBox { display:none; }
+
+  /* Mode-specific stat (SWINGS / OUTS / LIVES) — top-right corner */
+  #modeBox { position:fixed; top:14px; right:18px;
+    background:#0d1320; border:2px solid #2a3a5a; border-radius:6px;
+    padding:8px 14px; min-width:110px; text-align:center;
+    font-family:'Courier New',monospace; pointer-events:none;
+    box-shadow: 0 0 30px rgba(80,140,255,.18); }
+  /* Lives hearts get explicit color so a lost life ♡ contrasts a kept life ♥. */
+  #mode-label { color:#ffb733; font-size:14px; letter-spacing:2px; line-height:1.1;
+    text-shadow: 0 0 6px rgba(255,160,40,.5); }
+  #mode-num   { color:#7ad8ff; font-size:24px; font-weight:bold;
+    text-shadow: 0 0 8px rgba(80,200,255,.5); line-height:1; margin-top:4px; }
+
+  /* Modal (mode select / pause / game over) */
+  .modal { position:fixed; inset:0; z-index:60; display:none;
+    flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; text-align:center;
+    background: radial-gradient(ellipse at center, rgba(20,40,80,.5) 0%, rgba(0,0,0,.85) 75%);
+    font-family: 'Impact','Arial Black',sans-serif; }
+  .modal.show { display:flex; }
+  .modal h2 { font-size: clamp(40px, 8vw, 86px); letter-spacing:6px; margin:0 0 18px;
+    background: linear-gradient(180deg, #fff6a8 0%, #ffcf3b 40%, #ff5e2a 80%, #b4004a 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    -webkit-text-stroke: 2px #0a0a0a;
+    filter: drop-shadow(0 4px 0 rgba(0,0,0,.7)) drop-shadow(0 0 18px rgba(255,140,40,.5)); }
+  .modal .stats { display:flex; flex-wrap:wrap; gap:24px; justify-content:center;
+    margin:18px 0 24px; font-family:'Courier New',monospace; }
+  .modal .stat { text-align:center; min-width:100px; }
+  .modal .stat .lbl { color:#7ea4d8; font-size:11px; letter-spacing:3px; }
+  .modal .stat .num { color:#ffb733; font-size:34px; font-weight:bold;
+    text-shadow: 0 0 10px rgba(255,160,40,.5); margin-top:4px; }
+  .modal .btnrow { display:flex; gap:14px; margin-top:6px; flex-wrap:wrap; justify-content:center; }
+  .modal button { padding:14px 30px; font-size:20px; letter-spacing:4px;
+    font-family:'Impact','Arial Black',sans-serif; cursor:pointer;
+    color:#2a0a00; background:linear-gradient(180deg, #ffe066, #ff7a2a);
+    border:3px solid #fff7c8; border-radius:12px;
+    box-shadow: 0 0 20px rgba(255,160,40,.7), 0 4px 0 rgba(0,0,0,.5);
+    transition: transform .08s; }
+  .modal button.ghost { background:transparent; color:#cfe7ff; border-color:#5af;
+    box-shadow:none; text-shadow: 0 0 6px #5af; }
+  .modal button:hover  { transform: translateY(-2px) scale(1.04); }
+  .modal button:active { transform: translateY(2px); }
+  .modal .hint { font-family:'Courier New',monospace; font-size:12px; letter-spacing:3px;
+    color:#7fa6cc; margin-top:18px; }
+
+  /* Mode select cards */
+  .modes { display:flex; gap:18px; flex-wrap:wrap; justify-content:center;
+    max-width:900px; margin:8px 0 18px; }
+  .mode-card { width:240px; padding:22px 16px; cursor:pointer;
+    background: rgba(13, 19, 32, .85);
+    border:3px solid rgba(120,200,255,.4); border-radius:14px;
+    transition: transform .1s, border-color .1s, box-shadow .1s; }
+  .mode-card:hover { transform: translateY(-4px) scale(1.03); border-color:#ffb733;
+    box-shadow: 0 0 22px rgba(255,140,40,.55); }
+  .mode-card .mn-name { font-family:'Impact','Arial Black',sans-serif;
+    font-size:28px; letter-spacing:5px; color:#ffd24a;
+    text-shadow: 0 2px 0 #000, 0 0 12px rgba(255,160,40,.6); }
+  .mode-card .mn-desc { font-family:'Courier New',monospace; font-size:13px;
+    letter-spacing:1px; color:#cfe7ff; margin-top:10px; line-height:1.5; }
+  .mode-card .mn-best { font-family:'Courier New',monospace; font-size:12px;
+    letter-spacing:2px; color:#7ea4d8; margin-top:14px; }
+  .mode-card .mn-best b { color:#ffb733; }
+
+  /* Title / start screen */
+  #title { position:fixed; inset:0; z-index:50; display:flex;
+    flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+    background: radial-gradient(ellipse at center, rgba(20,40,80,.45) 0%, rgba(0,0,0,.92) 75%);
+    font-family: 'Impact','Arial Black',sans-serif; }
+  #title.hidden { display:none; }
+  #title .tag { font-size:18px; letter-spacing:10px; color:#9ad8ff;
+    text-shadow: 0 0 12px #59aaff; margin-bottom:6px; }
+  #title h1 { font-size: clamp(56px, 11vw, 130px); letter-spacing: 8px; margin:0;
+    background: linear-gradient(180deg, #fff6a8 0%, #ffcf3b 40%, #ff5e2a 80%, #b4004a 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    -webkit-text-stroke: 3px #0a0a0a;
+    filter: drop-shadow(0 6px 0 rgba(0,0,0,.8)) drop-shadow(0 0 24px rgba(255,140,40,.6));
+    animation: titleWobble 2.8s ease-in-out infinite; }
+  @keyframes titleWobble { 50% { transform: scale(1.02) rotate(-1deg); } }
+  #title p { font-family: 'Courier New', monospace; font-size:15px; line-height:1.6;
+    letter-spacing:1.5px; color:#cfe7ff; max-width:560px; margin:24px 0 0; opacity:.85; }
+  #startBtn { margin-top: 38px; padding: 18px 56px; font-size: 30px; letter-spacing:8px;
+    font-family: 'Impact','Arial Black',sans-serif; cursor: pointer;
+    color:#2a0a00; background: linear-gradient(180deg, #ffe066, #ff7a2a);
+    border: 3px solid #fff7c8; border-radius: 14px;
+    box-shadow: 0 0 30px rgba(255,160,40,.8), 0 6px 0 rgba(0,0,0,.5);
+    text-shadow: 0 1px 0 #fff7c8; transition: transform .08s; }
+  #startBtn:hover  { transform: translateY(-2px) scale(1.04); }
+  #startBtn:active { transform: translateY(2px); box-shadow: 0 0 30px rgba(255,160,40,.8), 0 2px 0 rgba(0,0,0,.5); }
+  #title .keys { margin-top: 28px; font-family:'Courier New',monospace;
+    font-size:13px; letter-spacing:3px; color:#7fa6cc; }
+  #title .keys kbd { display:inline-block; padding:3px 10px; border:2px solid #5af;
+    background: rgba(0,30,80,.4); border-radius:6px; margin:0 4px; color:#fff;
+    font-family:'Courier New',monospace; font-size:13px; }
+
+  #title .colors { margin-top:30px; }
+  #title .cl-label { font-family:'Courier New',monospace; font-size:12px;
+    letter-spacing:4px; color:#7fa6cc; margin-bottom:12px; }
+  .swatches { display:flex; gap:12px; justify-content:center; }
+  .sw { width:38px; height:38px; border-radius:50%; border:3px solid rgba(255,255,255,.25);
+    cursor:pointer; padding:0; transition: transform .1s, border-color .1s, box-shadow .1s;
+    box-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  .sw:hover { transform: scale(1.12); }
+  .sw.selected { border-color:#fff;
+    box-shadow: 0 0 14px rgba(255,255,255,.7), 0 2px 8px rgba(0,0,0,.6);
+    transform: scale(1.08); }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="board">
+  <div class="section rhe">
+    <div class="team">HOME</div>
+    <div class="stat"><div class="lbl">R</div><div class="num" id="sb-r">0</div></div>
+    <div class="stat"><div class="lbl">H</div><div class="num" id="sb-h">0</div></div>
+    <div class="stat"><div class="lbl">E</div><div class="num" id="sb-e">0</div></div>
+  </div>
+  <div class="section">
+    <div class="count-row"><span class="lab">B</span><span id="b-dots"></span></div>
+    <div class="count-row"><span class="lab">S</span><span id="s-dots"></span></div>
+    <div class="count-row"><span class="lab">O</span><span id="o-dots"></span></div>
+  </div>
+  <div class="section pitch-box">
+    <div class="lbl">PITCH</div>
+    <div class="num" id="sb-pitch">—</div>
+  </div>
+</div>
+<div id="board-derby">
+  <div class="section">
+    <div class="lbl">HOME RUNS</div>
+    <div class="num featured" id="d-hr">0</div>
+  </div>
+  <div class="section">
+    <div class="lbl">LONGEST</div>
+    <div class="num" id="d-longest">—</div>
+  </div>
+  <div class="section">
+    <div class="lbl" id="d-time-label">TIME</div>
+    <div class="num" id="d-time">1:30</div>
+  </div>
+  <div class="section" id="d-pitches-section">
+    <div class="lbl">PITCHES</div>
+    <div class="num" id="d-pitches">0/20</div>
+  </div>
+</div>
+<div id="call"></div>
+<div id="timing"></div>
+<div id="flash"></div>
+<div id="vignette"></div>
+<div id="ballMarker"></div>
+<div id="modeBox">
+  <div id="mode-label">OUTS</div>
+  <div id="mode-num">0/3</div>
+</div>
+<div id="meterLabel">POWER</div>
+<div id="meterWrap"><div id="meterFill"></div></div>
+<div id="aimWrap">
+  <div class="aimTick" id="aim-2"></div>
+  <div class="aimTick" id="aim-1"></div>
+  <div class="aimTick on" id="aim0"></div>
+  <div class="aimTick" id="aim1"></div>
+  <div class="aimTick" id="aim2"></div>
+</div>
+<div id="hint">HOLD [SPACE] charge · RELEASE swing &middot; [A]/[D] aim &middot; [R] restart</div>
+
+<div id="title">
+  <div class="tag">ARCADE BASEBALL</div>
+  <h1>DIAMOND STORM</h1>
+  <p>Step into the box. Read the pitch, charge your bat, and swing for a PERFECT HIT
+     to crush home runs over the wall.</p>
+  <div class="colors">
+    <div class="cl-label">YOUR TEAM COLOR</div>
+    <div class="swatches" id="colorSwatches">
+      <button class="sw" data-hue="0"   style="background:#e94545"></button>
+      <button class="sw" data-hue="20"  style="background:#ff7733"></button>
+      <button class="sw" data-hue="50"  style="background:#f5c91e"></button>
+      <button class="sw" data-hue="130" style="background:#3aaa45"></button>
+      <button class="sw selected" data-hue="220" style="background:#3a78ff"></button>
+      <button class="sw" data-hue="280" style="background:#a040d0"></button>
+    </div>
+  </div>
+  <div class="modes" id="modeCards">
+    <div class="mode-card" data-mode="derby">
+      <div class="mn-name">HR DERBY</div>
+      <div class="mn-desc">90 seconds or 20 pitches.<br/>Hit a 425+ to unlock max bonus.<br/>Only HRs count.</div>
+      <div class="mn-best">BEST: <b id="best-derby">—</b></div>
+    </div>
+    <div class="mode-card" data-mode="career">
+      <div class="mn-name">CAREER</div>
+      <div class="mn-desc">3 lives.<br/>Pitches get nastier every level.<br/>How long can you last?</div>
+      <div class="mn-best">BEST: <b id="best-career">—</b></div>
+    </div>
+    <div class="mode-card" data-mode="endless">
+      <div class="mn-name">PRACTICE</div>
+      <div class="mn-desc">No pressure.<br/>Hit until you make 3 outs.<br/>Warm up the swing.</div>
+      <div class="mn-best">&nbsp;</div>
+    </div>
+  </div>
+  <div class="keys">
+    <kbd>SPACE</kbd> hold to charge / release to swing
+    &nbsp;·&nbsp; <kbd>A</kbd>/<kbd>D</kbd> aim
+    &nbsp;·&nbsp; <kbd>P</kbd> pause
+    &nbsp;·&nbsp; <kbd>R</kbd> restart
+  </div>
+</div>
+
+<div class="modal" id="pauseModal">
+  <h2>PAUSED</h2>
+  <div class="btnrow">
+    <button id="resumeBtn">RESUME</button>
+    <button class="ghost" id="quitBtn">QUIT TO MENU</button>
+  </div>
+  <div class="hint">PRESS [P] OR [ESC] TO RESUME</div>
+</div>
+
+<div class="modal" id="overModal">
+  <h2 id="over-title">GAME OVER</h2>
+  <div class="stats" id="over-stats"></div>
+  <div class="btnrow">
+    <button id="againBtn">PLAY AGAIN</button>
+    <button class="ghost" id="menuBtn">MAIN MENU</button>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
