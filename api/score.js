@@ -14,13 +14,17 @@ import { Redis } from '@upstash/redis';
 
 // Lazy init so a misconfigured deployment returns a clean 503 instead of
 // crashing the function at boot (which surfaces as a generic 500).
+//
+// The Vercel-Upstash integration injects KV_REST_API_URL / KV_REST_API_TOKEN
+// (legacy from when Vercel KV was first-party). Manual Upstash setup uses
+// UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN. We support both.
 let _redis = null;
 function getRedis(){
   if (_redis) return _redis;
-  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN){
-    return null;
-  }
-  _redis = Redis.fromEnv();
+  const url   = process.env.UPSTASH_REDIS_REST_URL  || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  if (!url || !token) return null;
+  _redis = new Redis({ url, token });
   return _redis;
 }
 
