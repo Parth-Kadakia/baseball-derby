@@ -5,7 +5,17 @@
 
 import { Redis } from '@upstash/redis';
 
-const redis = Redis.fromEnv();
+// Lazy init: missing env vars yield a clean 503 instead of a function-init
+// crash that surfaces as a generic 500.
+let _redis = null;
+function getRedis(){
+  if (_redis) return _redis;
+  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN){
+    return null;
+  }
+  _redis = Redis.fromEnv();
+  return _redis;
+}
 
 const MAX_LIMIT = 100;
 
@@ -13,6 +23,14 @@ export default async function handler(req, res){
   if (req.method !== 'GET'){
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'method not allowed' });
+  }
+
+  const redis = getRedis();
+  if (!redis){
+    return res.status(503).json({
+      error: 'leaderboard not configured',
+      hint: 'Connect Upstash Redis in the Vercel project Storage tab, then redeploy.',
+    });
   }
 
   const mode = (req.query?.mode ?? '').toString();
@@ -23,6 +41,7 @@ export default async function handler(req, res){
 
   const lbKey = mode === 'derby' ? 'lb:derby' : 'lb:career';
 
+  try {
   // Top N user IDs + scores.
   const raw = await redis.zrange(lbKey, 0, limit - 1, { rev: true, withScores: true });
   const entries = [];
@@ -65,4 +84,11 @@ export default async function handler(req, res){
   // Redis read cost during heavy traffic.
   res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=60');
   return res.status(200).json({ mode, total, rows });
+  } catch (err){
+    console.error('leaderboard handler failed:', err);
+    return res.status(503).json({
+      error: 'leaderboard temporarily unavailable',
+      detail: err?.message ?? String(err),
+    });
+  }
 }

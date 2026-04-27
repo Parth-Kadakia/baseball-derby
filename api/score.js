@@ -12,7 +12,17 @@
 
 import { Redis } from '@upstash/redis';
 
-const redis = Redis.fromEnv();
+// Lazy init so a misconfigured deployment returns a clean 503 instead of
+// crashing the function at boot (which surfaces as a generic 500).
+let _redis = null;
+function getRedis(){
+  if (_redis) return _redis;
+  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN){
+    return null;
+  }
+  _redis = Redis.fromEnv();
+  return _redis;
+}
 
 // --- limits ---
 const MAX_DERBY_HR        = 50;     // far above any plausible 1:30 derby
@@ -36,6 +46,18 @@ export default async function handler(req, res){
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'method not allowed' });
   }
+
+  const redis = getRedis();
+  if (!redis){
+    return res.status(503).json({
+      error: 'leaderboard not configured',
+      hint: 'Connect Upstash Redis in the Vercel project Storage tab, then redeploy.',
+    });
+  }
+
+  // Wrap everything from here on so any Redis hiccup surfaces as a clean 503
+  // with a useful message instead of a generic 500.
+  try {
 
   // Rate limit per IP using Redis incr + expire.
   const ip = (req.headers['x-forwarded-for']?.split(',')[0] || 'unknown').trim();
@@ -111,4 +133,12 @@ export default async function handler(req, res){
     totalPlayers: total,
     score: primary,
   });
+
+  } catch (err){
+    console.error('score handler failed:', err);
+    return res.status(503).json({
+      error: 'leaderboard temporarily unavailable',
+      detail: err?.message ?? String(err),
+    });
+  }
 }
