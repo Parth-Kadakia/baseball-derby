@@ -329,6 +329,52 @@ addEventListener('keyup', (e) => {
   if (e.code === 'Space' && game) game.setCharging(false);
 });
 
+// ---- touch controls (mobile/tablet) ----
+// Tap the canvas to start charging, release to swing — same semantics as
+// holding/releasing SPACE. The aim buttons get their own taps. The on-screen
+// pause button toggles pause. Touches on UI buttons don't reach the canvas
+// because they're position:fixed elements above the canvas in the stacking
+// order, so the canvas listener only fires for taps on the playfield itself.
+canvas.addEventListener('touchstart', (e) => {
+  if (!game || paused.value || game.isGameOver()) return;
+  e.preventDefault();
+  game.setCharging(true);
+}, { passive: false });
+canvas.addEventListener('touchend', (e) => {
+  if (!game) return;
+  e.preventDefault();
+  game.setCharging(false);
+}, { passive: false });
+canvas.addEventListener('touchcancel', () => { if (game) game.setCharging(false); });
+
+const aimLeftBtn  = document.getElementById('aimLeftBtn');
+const aimRightBtn = document.getElementById('aimRightBtn');
+const pauseBtn    = document.getElementById('pauseBtn');
+
+function tapAim(d){
+  return (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (game && !paused.value && !game.isGameOver()) game.adjustAim(d);
+  };
+}
+aimLeftBtn.addEventListener('touchstart',  tapAim(-1), { passive: false });
+aimRightBtn.addEventListener('touchstart', tapAim(+1), { passive: false });
+// Click events for desktop test (won't fire on real touch since touchstart
+// already preventDefault'd the synthetic click).
+aimLeftBtn.addEventListener('click',  tapAim(-1));
+aimRightBtn.addEventListener('click', tapAim(+1));
+
+function tapPause(e){
+  e?.preventDefault?.();
+  e?.stopPropagation?.();
+  if (!game || game.isGameOver()) return;
+  paused.value = !paused.value;
+  pauseModal.classList.toggle('show', paused.value);
+}
+pauseBtn.addEventListener('touchstart', tapPause, { passive: false });
+pauseBtn.addEventListener('click', tapPause);
+
 // Idle title-screen mode display so the HUD slot doesn't show stale text.
 setModeStat('READY', '—');
 
