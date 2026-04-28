@@ -40,9 +40,11 @@ function fitCamera(){
   const vFovRad = 2 * Math.atan(Math.tan(hFovRad/2) / aspect);
   camera.fov = Math.min(75, Math.max(35, THREE.MathUtils.radToDeg(vFovRad)));
   // Closer framing on every device — actors fill more of the screen.
-  // Pulled back ~5% from the previous tight framing so the stadium reads.
-  camera.position.set(3.4, 2.1, 11.6);
-  camera.lookAt(-2, 1.3, -2);
+  // Camera pulled in from the original (4, 2.2, 16) so actors read big,
+  // with lookAt shifted right of the mound so the catcher + umpire on
+  // the +X side actually fit in frame instead of clipping the right edge.
+  camera.position.set(3.6, 2.1, 12.8);
+  camera.lookAt(-1, 1.3, -1.5);
   camera.updateProjectionMatrix();
 }
 fitCamera();
