@@ -89,6 +89,23 @@ export default async function handler(req, res){
   const cleanName = cleanNickname(nickname);
   const teamHueClean = clamp(teamHue ?? 220, 0, 360);
 
+  // Nickname reservation: each canonical nickname maps to exactly one userId.
+  // First successful submission with a given name claims it; future attempts
+  // from a different browser get a 409 with a clear message.
+  // (We use the cleaned nickname as the key — already normalized to ASCII
+  // letters/digits/space/-/_, max 16 chars — but UPPERCASE for case-insensitive
+  // matching so "Flipmaster" and "FLIPMASTER" can't both squat.)
+  const nickKey = `nick:${cleanName.toUpperCase()}`;
+  const reservedFor = await redis.get(nickKey);
+  if (reservedFor && reservedFor !== userId){
+    return res.status(409).json({
+      error: 'nickname_taken',
+      message: `"${cleanName}" is already taken. Change your nickname on the title screen and try again.`,
+    });
+  }
+  // Claim/refresh ownership (idempotent SET).
+  await redis.set(nickKey, userId);
+
   const userKey = `user:${userId}`;
   const lbKey   = mode === 'derby' ? 'lb:derby' : 'lb:career';
 

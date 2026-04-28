@@ -240,9 +240,13 @@ async function handleSubmitScore(){
     stats: lastRun.stats,
   });
   if (res?.error){
-    overRank.textContent = `LEADERBOARD OFFLINE (${res.error})`;
+    // Prefer the server's human-friendly message when present (e.g. nickname
+    // collision) — fall back to the bare error code otherwise.
+    overRank.textContent = res.message
+      ? res.message.toUpperCase()
+      : `LEADERBOARD OFFLINE (${res.error})`;
     submitScoreBtn.disabled = false;
-    submitScoreBtn.textContent = 'RETRY';
+    submitScoreBtn.textContent = res.error === 'nickname_taken' ? 'CHANGE NAME' : 'RETRY';
     return;
   }
   if (res?.rank){

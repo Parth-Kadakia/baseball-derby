@@ -8,7 +8,11 @@
 async function readErrorBody(res){
   try {
     const j = await res.json();
-    return { error: j.error || `http ${res.status}`, hint: j.hint };
+    return {
+      error: j.error || `http ${res.status}`,
+      message: j.message,
+      hint: j.hint,
+    };
   } catch {
     return { error: `http ${res.status}` };
   }
