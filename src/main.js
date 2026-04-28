@@ -39,13 +39,8 @@ function fitCamera(){
   const hFovRad = THREE.MathUtils.degToRad(45);
   const vFovRad = 2 * Math.atan(Math.tan(hFovRad/2) / aspect);
   camera.fov = Math.min(75, Math.max(35, THREE.MathUtils.radToDeg(vFovRad)));
-  // On mobile, push the camera closer (and slightly lower) so the actors
-  // fill more of the screen — desktop keeps the wider cinematic framing.
-  if (isMobileLayout()){
-    camera.position.set(3.2, 2.0, 11);
-  } else {
-    camera.position.set(4, 2.2, 16);
-  }
+  // Closer framing on every device — actors fill more of the screen.
+  camera.position.set(3.2, 2.0, 11);
   camera.lookAt(-2, 1.3, -2);
   camera.updateProjectionMatrix();
 }
