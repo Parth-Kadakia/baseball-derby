@@ -153,6 +153,12 @@ export function createGame({
     // what counts (e.g. HR Derby only counts HRs).
     if (o.points > 0){
       if (o.label.startsWith('HOME RUN')){
+        // Per-HR distance floater — same calc as DERBY's onContact so the
+        // numbers match. Shown for every HR in every mode.
+        const dx = ball.pos.x - 2.6;
+        const dz = ball.pos.z;
+        const distFt = Math.round(Math.hypot(dx, dz) * 12);
+        floater(`${distFt} FT`, '#ffd24a', 50, 28);
         flash(0.7, 200);
         sfx.crowdCheer(1.4);
         kick(16, 0.45);

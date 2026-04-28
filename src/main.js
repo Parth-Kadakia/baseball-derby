@@ -24,14 +24,29 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x0a1830, 24, 90);
 
 const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 200);
-camera.position.set(4, 2.2, 16);
-camera.lookAt(-2, 1.3, -2);
+
+// Detect a coarse-pointer / narrow-viewport device. Used to zoom the camera
+// in on mobile so the action reads bigger on a phone screen.
+function isMobileLayout(){
+  try {
+    if (matchMedia('(hover: none) and (pointer: coarse)').matches) return true;
+  } catch {}
+  return innerWidth <= 760;
+}
 function fitCamera(){
   const aspect = innerWidth/innerHeight;
   camera.aspect = aspect;
   const hFovRad = THREE.MathUtils.degToRad(45);
   const vFovRad = 2 * Math.atan(Math.tan(hFovRad/2) / aspect);
   camera.fov = Math.min(75, Math.max(35, THREE.MathUtils.radToDeg(vFovRad)));
+  // On mobile, push the camera closer (and slightly lower) so the actors
+  // fill more of the screen — desktop keeps the wider cinematic framing.
+  if (isMobileLayout()){
+    camera.position.set(3.2, 2.0, 11);
+  } else {
+    camera.position.set(4, 2.2, 16);
+  }
+  camera.lookAt(-2, 1.3, -2);
   camera.updateProjectionMatrix();
 }
 fitCamera();
