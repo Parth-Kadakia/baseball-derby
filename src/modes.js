@@ -232,16 +232,27 @@ export const CAREER = {
   },
   pickPitch(state){
     const lvl = state.careerLevel;
-    const typePool = lvl >= 5 ? PITCH_TYPES
+    // Pitch type unlock — earlier so by L4 you face the full pool.
+    //   1: NORMAL only           (warm-up)
+    //   2: + FAST                (gas)
+    //   3: + CURVE               (breaking ball)
+    //   4+: + CHANGE-up          (full pool)
+    const typePool = lvl >= 4 ? PITCH_TYPES
                   : lvl >= 3 ? PITCH_TYPES.slice(0, 3)
-                  : PITCH_TYPES.slice(0, 2);
-    const easyLocs   = PITCH_LOCATIONS.filter(l => l.name === 'normal');
-    const midLocs    = PITCH_LOCATIONS.filter(l => ['normal','high','low'].includes(l.name));
-    const locPool    = lvl >= 4 ? PITCH_LOCATIONS
-                    : lvl >= 2 ? midLocs
-                    : easyLocs;
+                  : lvl >= 2 ? PITCH_TYPES.slice(0, 2)
+                  :            PITCH_TYPES.slice(0, 1);
+    // Location unlock — chase pitches and dirt balls show up sooner too.
+    const easyLocs = PITCH_LOCATIONS.filter(l => l.name === 'normal');
+    const midLocs  = PITCH_LOCATIONS.filter(l => ['normal','high','low'].includes(l.name));
+    const wideLocs = PITCH_LOCATIONS.filter(l => l.name !== 'in dirt');
+    const locPool  = lvl >= 4 ? PITCH_LOCATIONS
+                  : lvl >= 3 ? wideLocs
+                  : lvl >= 2 ? midLocs
+                  :            easyLocs;
     const t = pickFrom(typePool);
-    const speedMul = Math.max(0.55, 1 - (lvl - 1) * 0.08);  // -8% per level, floor 0.55x
+    // Steeper speed curve so level 5 actually feels fast.
+    //   L1=1.00  L2=0.90  L3=0.80  L4=0.70  L5=0.60  L6=0.50  L7+=0.45
+    const speedMul = Math.max(0.45, 1 - (lvl - 1) * 0.10);
     const type = { ...t, duration: t.duration * speedMul };
     return { type, location: pickFrom(locPool) };
   },

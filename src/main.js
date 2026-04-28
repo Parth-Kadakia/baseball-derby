@@ -40,7 +40,8 @@ function fitCamera(){
   const vFovRad = 2 * Math.atan(Math.tan(hFovRad/2) / aspect);
   camera.fov = Math.min(75, Math.max(35, THREE.MathUtils.radToDeg(vFovRad)));
   // Closer framing on every device — actors fill more of the screen.
-  camera.position.set(3.2, 2.0, 11);
+  // Pulled back ~5% from the previous tight framing so the stadium reads.
+  camera.position.set(3.4, 2.1, 11.6);
   camera.lookAt(-2, 1.3, -2);
   camera.updateProjectionMatrix();
 }
@@ -100,7 +101,7 @@ function refreshBestChips(){
     d.gamesPlayed > 0 ? `${d.bestHRs} HR · ${d.bestDistance|0} FT` : '—';
   const c = profile.career;
   document.getElementById('best-career').textContent =
-    c.runs > 0 ? `LV ${c.level} · ${c.bestStreak} STREAK` : '—';
+    c.runs > 0 ? `${c.bestStreak} STREAK · ${c.bestScore ?? 0} PTS · LV ${c.bestLevel ?? c.level}` : '—';
 }
 refreshBestChips();
 
@@ -196,6 +197,7 @@ function handleGameOver(state, mode){
       hrs: state.careerHRs,
       finalLevel: state.careerLevel,
       streak: state.careerStreak,
+      score: state.score,
     });
     lastRun = {
       mode: 'career',

@@ -27,11 +27,13 @@ function emptyProfile(){
     career: {
       runs: 0,           // total careers played
       bestStreak: 0,     // longest no-strikeout streak
+      bestScore: 0,      // highest single-run point total
+      bestLevel: 1,      // highest level reached across all runs
       currentStreak: 0,
       totalAtBats: 0,
       totalHits: 0,
       totalHRs: 0,
-      level: 1,
+      level: 1,          // legacy alias for bestLevel — kept for compat
     },
     lastSubmittedRun: null,   // for the leaderboard
     createdAt: Date.now(),
@@ -71,13 +73,15 @@ export function recordDerbyRun(profile, { score, hrs, longestHR }){
   saveProfile(profile);
 }
 
-export function recordCareerRun(profile, { atBats, hits, hrs, finalLevel, streak }){
+export function recordCareerRun(profile, { atBats, hits, hrs, finalLevel, streak, score }){
   profile.career.runs++;
   profile.career.totalAtBats += atBats;
   profile.career.totalHits += hits;
   profile.career.totalHRs += hrs;
-  profile.career.level = Math.max(profile.career.level, finalLevel);
+  profile.career.bestLevel = Math.max(profile.career.bestLevel ?? profile.career.level ?? 1, finalLevel);
+  profile.career.level = profile.career.bestLevel;   // legacy alias
   if (streak > profile.career.bestStreak) profile.career.bestStreak = streak;
+  if ((score ?? 0) > (profile.career.bestScore ?? 0)) profile.career.bestScore = score ?? 0;
   profile.career.currentStreak = streak;
   saveProfile(profile);
 }
